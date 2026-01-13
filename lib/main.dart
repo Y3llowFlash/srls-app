@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'firebase_options.dart';
+import 'auth/auth_gate.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+
+  // On Android, google-services.json provides config automatically.
+  // Passing options can sometimes trigger duplicate "[DEFAULT]" init in some setups.
+  await Firebase.initializeApp();
+
   runApp(const MyApp());
 }
 
@@ -16,12 +18,8 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'SRLS',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(useMaterial3: true),
-      home: const Scaffold(
-        body: Center(child: Text('Firebase Connected ✅')),
-      ),
+      home: const AuthGate(),
     );
   }
 }
