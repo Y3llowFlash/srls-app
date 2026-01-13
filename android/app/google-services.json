@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "216223062443",
+    "project_id": "events-15e3a",
+    "storage_bucket": "events-15e3a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:216223062443:android:dd86716f70c3dd349a9aee",
+        "android_client_info": {
+          "package_name": "com.example.srls_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAmSgJZAdqnb7Z5ATQzsweW4N04cTcMnSo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:216223062443:android:7e52367a05aefd7c9a9aee",
+        "android_client_info": {
+          "package_name": "com.harusoftwares.firebasetestapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAmSgJZAdqnb7Z5ATQzsweW4N04cTcMnSo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
