@@ -8,4 +8,13 @@ class FsPaths {
 
   static CollectionReference<Map<String, dynamic>> modules(String courseId) =>
       courses().doc(courseId).collection('modules');
+
+  static CollectionReference<Map<String, dynamic>> topics(
+    String courseId,
+    String moduleId,
+  ) =>
+      modules(courseId).doc(moduleId).collection('topics');
+
+  
+
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:srls_app/screens/module_screen.dart';
 import '../models/module_model.dart';
 import '../services/module_service.dart';
 
@@ -77,7 +78,16 @@ class CourseDetailScreen extends StatelessWidget {
                         leading: const Icon(Icons.drag_handle),
                         trailing: const Icon(Icons.chevron_right),
                         onTap: () {
-                          // Round 2 later
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ModuleScreen(
+                                courseId: courseId,
+                                moduleId: m.id,
+                                moduleTitle: m.title,
+                              ),
+                            ),
+                          );
                         },
                       );
                     },
