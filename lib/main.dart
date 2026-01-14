@@ -9,7 +9,7 @@ Future<void> main() async {
   // Passing options can sometimes trigger duplicate "[DEFAULT]" init in some setups.
   await Firebase.initializeApp();
 
-  runApp(const MyApp());
+  runApp(const MyApp()); 
 }
 
 class MyApp extends StatelessWidget { 

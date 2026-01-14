@@ -1,8 +1,11 @@
 
 import '../models/mcq_question.dart';
 import 'firestore_paths.dart';
+import 'srs_service.dart';
 
 class QuestionService {
+
+  final _srs = SrsService();
 
   Future<void> updateMcqQuestion({
     required String courseId,
@@ -22,10 +25,29 @@ class QuestionService {
     required String questionId,
     required bool starred,
   }) async {
+    // 1) update question doc
     await FsPaths.questionDoc(courseId, moduleId, topicId, questionId).update({
       'isStarred': starred,
     });
+
+    // 2) if starring, ensure SRS doc exists
+    if (starred) {
+      await _srs.ensureQuestionSrs(
+        courseId: courseId,
+        moduleId: moduleId,
+        topicId: topicId,
+        questionId: questionId,
+        isStarred: true,
+      );
+    }
+
+    // 3) ALWAYS update SRS starred flag (true OR false)
+    await _srs.setQuestionSrsStarred(
+      questionId: questionId,
+      starred: starred,
+    );
   }
+
 
 
   Future<void> deleteMcqQuestion({
@@ -34,7 +56,11 @@ class QuestionService {
     required String topicId,
     required String questionId,
   }) async {
+    // 1) delete question doc
     await FsPaths.questionDoc(courseId, moduleId, topicId, questionId).delete();
+
+    // 2) delete SRS doc (cleanup)
+    await _srs.deleteQuestionSrs(questionId);
   }
 
   Future<String> createMcqQuestion({
