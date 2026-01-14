@@ -59,6 +59,26 @@ class _ViewMcqQuestionScreenState extends State<ViewMcqQuestionScreen> {
     }
   }
 
+  Future<void> _toggleStar() async {
+    final q = _question;
+    if (q == null) return;
+
+    final newValue = !q.isStarred;
+
+    setState(() {
+      _question = q.copyWith(isStarred: newValue);
+    });
+
+    await service.setStarQuestion(
+      courseId: widget.courseId,
+      moduleId: widget.moduleId,
+      topicId: widget.topicId,
+      questionId: q.id,
+      starred: newValue,
+    );
+  }
+
+
   Future<void> _onEdit() async {
     final q = _question;
     if (q == null) return;
@@ -122,22 +142,27 @@ class _ViewMcqQuestionScreenState extends State<ViewMcqQuestionScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Question'),
-        actions: [
-          if (q != null) ...[
-            IconButton(
-              icon: const Icon(Icons.edit),
-              tooltip: 'Edit',
-              onPressed: _onEdit,
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete),
-              tooltip: 'Delete',
-              onPressed: _onDelete,
-            ),
+  title: const Text('Question'),
+  actions: [
+    if (q != null) ...[
+              IconButton(
+                icon: Icon(q.isStarred ? Icons.star : Icons.star_border),
+                tooltip: q.isStarred ? 'Unstar question' : 'Star question',
+                onPressed: _toggleStar,
+              ),
+              IconButton(
+                icon: const Icon(Icons.edit),
+                tooltip: 'Edit',
+                onPressed: _onEdit,
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete),
+                tooltip: 'Delete',
+                onPressed: _onDelete,
+              ),
+            ],
           ],
-        ],
-      ),
+        ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : (_error != null)

@@ -3,7 +3,7 @@ import '../models/mcq_question.dart';
 import 'firestore_paths.dart';
 
 class QuestionService {
-  
+
   Future<void> updateMcqQuestion({
     required String courseId,
     required String moduleId,
@@ -14,6 +14,19 @@ class QuestionService {
     await FsPaths.questionDoc(courseId, moduleId, topicId, questionId)
         .update(question.toMapForUpdate());
   }
+
+  Future<void> setStarQuestion({
+    required String courseId,
+    required String moduleId,
+    required String topicId,
+    required String questionId,
+    required bool starred,
+  }) async {
+    await FsPaths.questionDoc(courseId, moduleId, topicId, questionId).update({
+      'isStarred': starred,
+    });
+  }
+
 
   Future<void> deleteMcqQuestion({
     required String courseId,

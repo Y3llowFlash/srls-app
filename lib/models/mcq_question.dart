@@ -16,6 +16,19 @@ class McqQuestion {
   final Timestamp? createdAt;
   final Timestamp? updatedAt;
 
+  McqQuestion copyWith({
+      bool? isStarred,
+    }) {
+      return McqQuestion(
+        id: id,
+        questionText: questionText,
+        options: options,
+        correctOptionId: correctOptionId,
+        isStarred: isStarred ?? this.isStarred,
+        questionImageMediaId: questionImageMediaId,
+      );
+    }
+
   McqQuestion({
     required this.id,
     required this.questionText,
