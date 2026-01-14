@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../services/course_service.dart';
-import '../utils/course_code.dart';
-
+import '../screens/create_course_screen.dart';
+import '../models/course.dart';
+import 'course_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -52,62 +52,119 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
+Widget build(BuildContext context) {
+  final user = FirebaseAuth.instance.currentUser;
+  final uid = user?.uid;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Home'),
-        actions: [
+  return Scaffold(
+    appBar: AppBar(
+      title: const Text('Home'),
+      actions: [
           IconButton(onPressed: _logout, icon: const Icon(Icons.logout)),
         ],
+    ),
+    body: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // --- your existing welcome/status area ---
+          Text(
+            'Welcome ${user?.displayName ?? ''}\n'
+            'Email verified ✅\n'
+            'User doc: ${_created ? "created/exists ✅" : "checking..."}',
+          ),
+
+          const SizedBox(height: 16),
+
+                    
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const CreateCourseScreen(),
+                ),
+              );
+            },
+            icon: const Icon(Icons.add),
+            label: const Text('Create New Course'),
+          ),
+
+
+          const SizedBox(height: 24),
+          const Text(
+            'My Courses',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+
+          // IMPORTANT: list needs Expanded so it can scroll
+          Expanded(
+            child: uid == null
+                ? const Center(child: Text('Not logged in'))
+                : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                    stream: FirebaseFirestore.instance
+                        .collection('courses')
+                        .where('creatorId', isEqualTo: uid)
+                        .orderBy('createdAt', descending: true)
+                        .snapshots(),
+                    builder: (context, snapshot) {
+                      if (snapshot.hasError) {
+                        return Center(
+                          child: Text('Error: ${snapshot.error}'),
+                        );
+                      }
+
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+
+                      final docs = snapshot.data?.docs ?? [];
+                      if (docs.isEmpty) {
+                        return const Center(
+                          child: Text('No courses yet. Create your first one.'),
+                        );
+                      }
+
+                      final courses = docs
+                          .map((d) => Course.fromMap(d.id, d.data()))
+                          .toList();
+
+                      return ListView.separated(
+                        itemCount: courses.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, i) {
+                          final c = courses[i];
+
+                          return ListTile(
+                            title: Text(c.title),
+                            subtitle: Text(
+                              '${c.visibility} • code: ${c.courseCode}'
+                              '${c.duplicable ? " • duplicable" : ""}',
+                            ),
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => CourseDetailScreen(
+                                    courseId: c.id,
+                                    title: c.title,
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      );
+                    },
+                  ),
+          ),
+        ],
       ),
+    ),
+  );
+}
 
-
-      body: Center(
-        child: Column(
-          children: [
-            Text(
-              'Welcome ${user?.displayName ?? ''}\n'
-              'Email verified ✅\n'
-              'User doc: ${_created ? "created/exists ✅" : "checking..."}',
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 20),
-
-            ElevatedButton(
-              onPressed: () async {
-                try {
-                  final code = generateCourseCode();
-                  await CourseService().createCourse(
-                    title: 'Math 101',
-                    description: 'Demo course created from Day 2 test',
-                    visibility: 'public',
-                    duplicable: true,
-                    courseCode: code,
-                  );
-
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Course saved ✅ Code: $code')),
-                  );
-                } catch (e) {
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed ❌ $e')),
-                  );
-                }
-              },
-              child: const Text('Create Test Course'),
-            ),
-          ],
-        ),
-        
-      ),
-
-
-
-      
-    );
-  }
+  
 }
