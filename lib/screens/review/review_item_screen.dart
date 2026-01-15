@@ -120,6 +120,7 @@ class _ReviewItemScreenState extends State<ReviewItemScreen> {
             onPressed: () => setState(() => _revealed = !_revealed),
             child: Text(_revealed ? 'Hide' : 'Reveal'),
           ),
+          
         ],
       ),
       body: _loading

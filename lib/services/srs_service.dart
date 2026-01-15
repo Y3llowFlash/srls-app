@@ -5,6 +5,11 @@ import '../services/firestore_paths.dart';
 import '../utils/srs_math.dart';
 
 class SrsService {
+
+  String _noteId(String topicId) => 'n_$topicId';
+  String _questionId(String questionId) => 'q_$questionId';
+
+
   final FirebaseFirestore _db;
 
   SrsService({FirebaseFirestore? db}) : _db = db ?? FirebaseFirestore.instance;
@@ -175,21 +180,25 @@ class SrsService {
     required String topicId,
     required bool starred,
   }) async {
-    await _srs().doc(_noteDocId(topicId)).set({
+    await _srs().doc(_noteId(topicId)).set({
       'isStarred': starred,
+      'dueAt': Timestamp.now(),   // 👈 FORCE DUE NOW
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
+
 
   Future<void> setQuestionSrsStarred({
     required String questionId,
     required bool starred,
   }) async {
-    await _srs().doc(_questionDocId(questionId)).set({
+    await _srs().doc(_questionId(questionId)).set({
       'isStarred': starred,
+      'dueAt': Timestamp.now(),   // 👈 FORCE DUE NOW
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
+
 
   // -----------------------------
   // Deletes (unified)

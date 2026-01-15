@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:srls_app/screens/review/review_queue_screen.dart';
+
 import '../screens/create_course_screen.dart';
 import '../models/course.dart';
 import 'course_detail_screen.dart';
+
+// ✅ Use session style review (Anki/RemNote)
+import 'package:srls_app/screens/review/review_session_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -28,7 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final ref = FirebaseFirestore.instance.collection('users').doc(user.uid);
-      final snap = await ref.get(); // may fail on poor net
+      final snap = await ref.get();
 
       if (!snap.exists) {
         await ref.set({
@@ -41,8 +44,6 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       setState(() => _created = true);
     } catch (e) {
-      // If offline/unavailable, DO NOT crash the app.
-      // Just show "checking..." and let it succeed later.
       if (!mounted) return;
       setState(() => _created = false);
     }
@@ -53,132 +54,131 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   @override
-Widget build(BuildContext context) {
-  final user = FirebaseAuth.instance.currentUser;
-  final uid = user?.uid;
+  Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+    final uid = user?.uid;
 
-  return Scaffold(
-    appBar: AppBar(
-      title: const Text('Home'),
-      actions: [
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Home'),
+        actions: [
           IconButton(onPressed: _logout, icon: const Icon(Icons.logout)),
         ],
-    ),
-    body: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // --- your existing welcome/status area ---
-          Text(
-            'Welcome ${user?.displayName ?? ''}\n'
-            'Email verified ✅\n'
-            'User doc: ${_created ? "created/exists ✅" : "checking..."}',
-          ),
-
-          const SizedBox(height: 16),
-
-          ElevatedButton.icon(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ReviewQueueScreen()
-                ),
-              );
-            },
-            icon: const Icon(Icons.add),
-            label: const Text('Review '),
-          ),
-
-                    
-          ElevatedButton.icon(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const CreateCourseScreen(),
-                ),
-              );
-            },
-            icon: const Icon(Icons.add),
-            label: const Text('Create New Course'),
-          ),
-
-
-          const SizedBox(height: 24),
-          const Text(
-            'My Courses',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-
-          // IMPORTANT: list needs Expanded so it can scroll
-          Expanded(
-            child: uid == null
-                ? const Center(child: Text('Not logged in'))
-                : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                    stream: FirebaseFirestore.instance
-                        .collection('courses')
-                        .where('creatorId', isEqualTo: uid)
-                        .orderBy('createdAt', descending: true)
-                        .snapshots(),
-                    builder: (context, snapshot) {
-                      if (snapshot.hasError) {
-                        return Center(
-                          child: Text('Error: ${snapshot.error}'),
-                        );
-                      }
-
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-
-                      final docs = snapshot.data?.docs ?? [];
-                      if (docs.isEmpty) {
-                        return const Center(
-                          child: Text('No courses yet. Create your first one.'),
-                        );
-                      }
-
-                      final courses = docs
-                          .map((d) => Course.fromMap(d.id, d.data()))
-                          .toList();
-
-                      return ListView.separated(
-                        itemCount: courses.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (context, i) {
-                          final c = courses[i];
-
-                          return ListTile(
-                            title: Text(c.title),
-                            subtitle: Text(
-                              '${c.visibility} • code: ${c.courseCode}'
-                              '${c.duplicable ? " • duplicable" : ""}',
-                            ),
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => CourseDetailScreen(
-                                    courseId: c.id,
-                                    title: c.title,
-                                  ),
-                                ),
-                              );
-                            },
-                          );
-                        },
-                      );
-                    },
-                  ),
-          ),
-        ],
       ),
-    ),
-  );
-}
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Welcome ${user?.displayName ?? ''}\n'
+              'Email verified ✅\n'
+              'User doc: ${_created ? "created/exists ✅" : "checking..."}',
+            ),
+            const SizedBox(height: 16),
 
-  
+            // ✅ Global Review (Anki-style session)
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const ReviewSessionScreen(),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.play_arrow),
+              label: const Text('Review'),
+            ),
+
+            const SizedBox(height: 10),
+
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const CreateCourseScreen(),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.add),
+              label: const Text('Create New Course'),
+            ),
+
+            const SizedBox(height: 24),
+            const Text(
+              'My Courses',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+
+            Expanded(
+              child: uid == null
+                  ? const Center(child: Text('Not logged in'))
+                  : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                      stream: FirebaseFirestore.instance
+                          .collection('courses')
+                          .where('creatorId', isEqualTo: uid)
+                          .orderBy('createdAt', descending: true)
+                          .snapshots(),
+                      builder: (context, snapshot) {
+                        if (snapshot.hasError) {
+                          return Center(
+                            child: Text('Error: ${snapshot.error}'),
+                          );
+                        }
+
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Center(
+                              child: CircularProgressIndicator());
+                        }
+
+                        final docs = snapshot.data?.docs ?? [];
+                        if (docs.isEmpty) {
+                          return const Center(
+                            child: Text('No courses yet. Create your first one.'),
+                          );
+                        }
+
+                        final courses = docs
+                            .map((d) => Course.fromMap(d.id, d.data()))
+                            .toList();
+
+                        return ListView.separated(
+                          itemCount: courses.length,
+                          separatorBuilder: (_, __) =>
+                              const Divider(height: 1),
+                          itemBuilder: (context, i) {
+                            final c = courses[i];
+
+                            return ListTile(
+                              title: Text(c.title),
+                              subtitle: Text(
+                                '${c.visibility} • code: ${c.courseCode}'
+                                '${c.duplicable ? " • duplicable" : ""}',
+                              ),
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => CourseDetailScreen(
+                                      courseId: c.id,
+                                      courseTitle: c.title, // ✅ FIXED
+                                    ),
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

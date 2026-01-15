@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:srls_app/screens/module_screen.dart';
-import '../models/module_model.dart';
-import '../services/module_service.dart';
+import 'package:srls_app/screens/review/review_session_screen.dart';
 
+import '../../models/module_model.dart';
+import '../../services/module_service.dart';
 class CourseDetailScreen extends StatelessWidget {
   final String courseId;
-  final String title;
+  final String courseTitle;
 
   const CourseDetailScreen({
     super.key,
     required this.courseId,
-    required this.title,
+    required this.courseTitle,
   });
 
   @override
@@ -18,138 +19,69 @@ class CourseDetailScreen extends StatelessWidget {
     final service = ModuleService();
 
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Text(
-                  'Modules',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.add),
-                  onPressed: () => _showAddModuleDialog(context, service),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-
-            Expanded(
-              child: StreamBuilder<List<ModuleModel>>(
-                stream: service.watchModules(courseId),
-                builder: (context, snapshot) {
-                  if (snapshot.hasError) {
-                    return Text('Error: ${snapshot.error}');
-                  }
-                  if (!snapshot.hasData) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-
-                  final modules = snapshot.data!;
-                  if (modules.isEmpty) {
-                    return const Center(
-                      child: Text('No modules yet. Tap + to add one.'),
-                    );
-                  }
-
-                  return ReorderableListView.builder(
-                    itemCount: modules.length,
-                    onReorder: (oldIndex, newIndex) async {
-                      if (newIndex > oldIndex) newIndex -= 1;
-
-                      final updated = List<ModuleModel>.from(modules);
-                      final moved = updated.removeAt(oldIndex);
-                      updated.insert(newIndex, moved);
-
-                      // Save new order to Firestore
-                      await service.reorderModules(courseId, updated);
-                    },
-                    itemBuilder: (context, i) {
-                      final m = modules[i];
-                      return ListTile(
-                        key: ValueKey(m.id), // REQUIRED for reorder
-                        title: Text(m.title),
-                        subtitle: Text('Module No : ${m.order + 1}'),
-                        leading: const Icon(Icons.drag_handle),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => ModuleScreen(
-                                courseId: courseId,
-                                moduleId: m.id,
-                                moduleTitle: m.title,
-                              ),
-                            ),
-                          );
-                        },
-                      );
-                    },
-                  );
-
-
-
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _showAddModuleDialog(
-    BuildContext context,
-    ModuleService service,
-  ) async {
-    final titleCtrl = TextEditingController();
-    final orderCtrl = TextEditingController(text: '1');
-
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Add Module'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: titleCtrl,
-              decoration: const InputDecoration(labelText: 'Module title'),
-            ),
-            TextField(
-              controller: orderCtrl,
-              decoration: const InputDecoration(labelText: 'Module No'),
-              keyboardType: TextInputType.number,
-            ),
-          ],
-        ),
+      appBar: AppBar(
+        title: Text(courseTitle),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Add'),
+          // ▶ Review entire course
+          IconButton(
+            icon: const Icon(Icons.play_arrow),
+            tooltip: 'Review this course',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ReviewSessionScreen(
+                    courseId: courseId,
+                  ),
+                ),
+              );
+            },
           ),
         ],
       ),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: StreamBuilder<List<ModuleModel>>(
+          stream: service.watchModules(courseId),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return Text('Error: ${snapshot.error}');
+            }
+            if (!snapshot.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final modules = snapshot.data!;
+            if (modules.isEmpty) {
+              return const Center(child: Text('No modules yet.'));
+            }
+
+            return ListView.separated(
+              itemCount: modules.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (context, i) {
+                final m = modules[i];
+                return ListTile(
+                  title: Text(m.title),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ModuleScreen(
+                          courseId: courseId,
+                          moduleId: m.id,
+                          moduleTitle: m.title,
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+            );
+          },
+        ),
+      ),
     );
-
-    if (ok != true) return;
-
-    final title = titleCtrl.text.trim();
-    final moduleNo = int.tryParse(orderCtrl.text.trim()) ?? 1;
-    final order = (moduleNo <= 1) ? 0 : moduleNo - 1;
-
-    if (title.isEmpty) return;
-
-    await service.addModule(courseId: courseId, title: title, order: order);
   }
 }

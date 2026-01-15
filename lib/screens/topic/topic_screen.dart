@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:srls_app/screens/questions/create_mcq_question_screen.dart' show CreateMcqQuestionScreen;
-import '../../services/topic_service.dart';
-import '../../services/question_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../practice/practice_session_screen.dart';
+
 import '../../models/mcq_question.dart';
+import '../../services/firestore_paths.dart';
+import '../../services/topic_service.dart';
+import '../questions/create_mcq_question_screen.dart';
 import '../questions/view_mcq_question_screen.dart';
-
-
+import '../review/review_session_screen.dart';
 
 class TopicScreen extends StatefulWidget {
   final String courseId;
@@ -29,27 +31,19 @@ class TopicScreen extends StatefulWidget {
 
   @override
   State<TopicScreen> createState() => _TopicScreenState();
-
 }
 
 class _TopicScreenState extends State<TopicScreen> {
-  late bool starred;
-  final service = TopicService();
-  final questionService = QuestionService();
+  final _topicService = TopicService();
 
+  late bool _starredNote = widget.isStarredNote;
 
+  Future<void> _toggleStarNote() async {
+    final newValue = !_starredNote;
 
-  @override
-  void initState() {
-    super.initState();
-    starred = widget.isStarredNote;
-  }
+    setState(() => _starredNote = newValue);
 
-  Future<void> _toggleStar() async {
-    final newValue = !starred;
-    setState(() => starred = newValue);
-
-    await service.setStarNote(
+    await _topicService.setStarNote(
       courseId: widget.courseId,
       moduleId: widget.moduleId,
       topicId: widget.topicId,
@@ -57,34 +51,70 @@ class _TopicScreenState extends State<TopicScreen> {
     );
   }
 
+  void _startTopicReview() {
+    // Reviews BOTH notes + questions for this topic
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ReviewSessionScreen(
+          courseId: widget.courseId,
+          moduleId: widget.moduleId,
+          topicId: widget.topicId,
+        ),
+      ),
+    );
+  }
+
+  void _startQuestionReview() {
+    // Reviews ONLY questions in this topic
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ReviewSessionScreen(
+          courseId: widget.courseId,
+          moduleId: widget.moduleId,
+          topicId: widget.topicId,
+          type: 'question',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _createQuestion() async {
+    final ok = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CreateMcqQuestionScreen(
+          courseId: widget.courseId,
+          moduleId: widget.moduleId,
+          topicId: widget.topicId,
+        ),
+      ),
+    );
+
+    if (ok == true && mounted) {
+      setState(() {}); // refresh
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final video = widget.videoUrl?.trim() ?? '';
+    final notes = widget.notes.trim();
+
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.topicTitle),
         actions: [
           IconButton(
-            icon: Icon(starred ? Icons.star : Icons.star_border),
-            tooltip: starred ? 'Unstar note' : 'Star note',
-            onPressed: _toggleStar,
+            icon: Icon(_starredNote ? Icons.star : Icons.star_border),
+            tooltip: _starredNote ? 'Unstar note' : 'Star note',
+            onPressed: _toggleStarNote,
           ),
           IconButton(
-            icon: const Icon(Icons.add),
-            tooltip: 'Add Question',
-            onPressed: () async {
-              final ok = await Navigator.push<bool>(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => CreateMcqQuestionScreen(
-                    courseId: widget.courseId,
-                    moduleId: widget.moduleId,
-                    topicId: widget.topicId,
-                  ),
-                ),
-              );
-
-              if (ok == true) setState(() {});
-            },
+            icon: const Icon(Icons.play_arrow),
+            tooltip: 'Review this topic',
+            onPressed: _startTopicReview,
           ),
         ],
       ),
@@ -92,57 +122,116 @@ class _TopicScreenState extends State<TopicScreen> {
         padding: const EdgeInsets.all(16),
         child: ListView(
           children: [
-
-            const Text('Video',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            // =======================
+            // VIDEO (TOP)
+            // =======================
+            const Text(
+              'Video',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 8),
-            if (widget.videoUrl == null)
+            if (video.isEmpty)
               const Text('(No video attached)')
             else
-              SelectableText(widget.videoUrl!),
+              SelectableText(video),
 
             const SizedBox(height: 24),
-            const Text('Notes',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+
+            // =======================
+            // NOTES (UNDER VIDEO)
+            // =======================
+            const Text(
+              'Notes',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 8),
             Text(
-              widget.notes.isEmpty ? '(No notes yet)' : widget.notes,
+              notes.isEmpty ? '(No notes yet)' : notes,
               style: const TextStyle(fontSize: 16, height: 1.4),
             ),
 
             const SizedBox(height: 24),
-            const Text('Questions',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+
+            // =======================
+            // MCQ SECTION HEADER + BUTTONS
+            // =======================
+            Row(
+              children: [
+                const Text(
+                  'MCQ Questions',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+
+                IconButton(
+                  tooltip: 'Practice',
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PracticeSessionScreen(
+                          courseId: widget.courseId,
+                          moduleId: widget.moduleId,
+                          topicId: widget.topicId,
+                          shuffle: false,
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.school),
+                ),
+
+                IconButton(
+                  tooltip: 'Create question',
+                  onPressed: _createQuestion,
+                  icon: const Icon(Icons.add),
+                ),
+              ],
+            ),
+
+
+
+
             const SizedBox(height: 8),
 
-            StreamBuilder<List<McqQuestion>>(
-              stream: questionService.streamQuestions(
-                courseId: widget.courseId,
-                moduleId: widget.moduleId,
-                topicId: widget.topicId,
-              ),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
+            // =======================
+            // MCQ LIST (Firestore stream)
+            // =======================
+            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: FsPaths.questions(
+                widget.courseId,
+                widget.moduleId,
+                widget.topicId,
+              ).orderBy('createdAt', descending: true).snapshots(),
+              builder: (context, snap) {
+                if (snap.hasError) {
+                  return Text('Error: ${snap.error}');
+                }
+                if (!snap.hasData) {
                   return const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
+                    padding: EdgeInsets.only(top: 16),
                     child: Center(child: CircularProgressIndicator()),
                   );
                 }
 
-                if (snapshot.hasError) {
-                  return Text('Error: ${snapshot.error}');
+                final docs = snap.data!.docs;
+                if (docs.isEmpty) {
+                  return const Padding(
+                    padding: EdgeInsets.only(top: 12),
+                    child: Text('No questions yet. Tap Create to add one.'),
+                  );
                 }
 
-                final questions = snapshot.data ?? [];
-
-                if (questions.isEmpty) {
-                  return const Text('(No questions yet)');
-                }
+                final questions =
+                    docs.map((d) => McqQuestion.fromDoc(d)).toList();
 
                 return Column(
                   children: questions.map((q) {
                     return ListTile(
-                      leading: q.isStarred ? const Icon(Icons.star) : const Icon(Icons.help_outline),
+                      contentPadding: EdgeInsets.zero,
+                      leading: q.isStarred
+                          ? const Icon(Icons.star)
+                          : const Icon(Icons.help_outline),
                       title: Text(
                         q.questionText,
                         maxLines: 2,
@@ -162,8 +251,8 @@ class _TopicScreenState extends State<TopicScreen> {
                           ),
                         );
 
-                        if (changed == true) {
-                          setState(() {}); // refresh list after edit/delete
+                        if (changed == true && mounted) {
+                          setState(() {});
                         }
                       },
                     );
@@ -171,29 +260,6 @@ class _TopicScreenState extends State<TopicScreen> {
                 );
               },
             ),
-
-
-            ElevatedButton(
-              onPressed: () async {
-                final ok = await Navigator.push<bool>(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => CreateMcqQuestionScreen(
-                      courseId: widget.courseId,
-                      moduleId: widget.moduleId,
-                      topicId: widget.topicId,
-                    ),
-                  ),
-                );
-
-                if (ok == true) {
-                  setState(() {}); // refresh if needed
-                }
-              },
-              child: const Text('Add Question'),
-            ),
-
-
           ],
         ),
       ),

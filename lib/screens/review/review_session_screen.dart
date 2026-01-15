@@ -8,6 +8,8 @@ import '../../services/review_queue_service.dart';
 import '../../services/review_content_service.dart';
 import '../../services/srs_service.dart';
 import '../../utils/srs_math.dart';
+import 'review_debug_srs_screen.dart';
+
 
 class ReviewSessionScreen extends StatefulWidget {
   const ReviewSessionScreen({
@@ -169,14 +171,43 @@ class _ReviewSessionScreenState extends State<ReviewSessionScreen> {
 
     if (_error != null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Review')),
+        appBar: AppBar(
+          title: const Text('Review'),
+           actions: [
+            IconButton(
+              icon: const Icon(Icons.bug_report),
+              tooltip: 'Debug SRS',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ReviewDebugSrsScreen()),
+                );
+              },
+            ),
+          ], 
+        ),
         body: Center(child: Text('Error: $_error')),
       );
     }
 
     if (_items.isEmpty) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Review')),
+        appBar: AppBar(
+          title: const Text('Review'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.bug_report),
+              tooltip: 'Debug SRS',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ReviewDebugSrsScreen()),
+                );
+              },
+            ),
+          ], 
+          
+        ),
         body: const Center(child: Text('No reviews due 🎉')),
       );
     }
@@ -287,7 +318,7 @@ class _ReviewSessionScreenState extends State<ReviewSessionScreen> {
             ),
             const SizedBox(height: 12),
             if (_revealed)
-              Text(t.notes ?? '(No notes)')
+              Text(t.notes)
             else
               const Text('Recall the notes in your mind…'),
           ],
