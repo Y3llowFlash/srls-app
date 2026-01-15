@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
-import '../../models/mcq_question.dart';
-import '../../services/question_service.dart';
-import 'create_mcq_question_screen.dart';
-
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+
+import '../../models/mcq_question.dart';
+import '../../services/question_service.dart';
 import '../../services/srs_service.dart';
 import '../../utils/srs_math.dart';
-
+import 'create_mcq_question_screen.dart';
 
 class ViewMcqQuestionScreen extends StatefulWidget {
   const ViewMcqQuestionScreen({
@@ -29,10 +28,11 @@ class ViewMcqQuestionScreen extends StatefulWidget {
 
 class _ViewMcqQuestionScreenState extends State<ViewMcqQuestionScreen> {
   final service = QuestionService();
+  final srs = SrsService();
+
   McqQuestion? _question;
   bool _loading = true;
   Object? _error;
-  
 
   @override
   void initState() {
@@ -72,7 +72,7 @@ class _ViewMcqQuestionScreenState extends State<ViewMcqQuestionScreen> {
 
     final newValue = !q.isStarred;
 
-    // optimistic UI update without copyWith
+    // optimistic UI update
     setState(() {
       _question = McqQuestion(
         id: q.id,
@@ -84,6 +84,18 @@ class _ViewMcqQuestionScreenState extends State<ViewMcqQuestionScreen> {
       );
     });
 
+    // ✅ Ensure SRS doc exists when starring
+    if (newValue) {
+      await srs.ensureQuestionSrs(
+        courseId: widget.courseId,
+        moduleId: widget.moduleId,
+        topicId: widget.topicId,
+        questionId: q.id,
+        isStarred: true,
+      );
+    }
+
+    // This should also internally set SRS starred, but even if not, we do it safely:
     await service.setStarQuestion(
       courseId: widget.courseId,
       moduleId: widget.moduleId,
@@ -91,8 +103,10 @@ class _ViewMcqQuestionScreenState extends State<ViewMcqQuestionScreen> {
       questionId: q.id,
       starred: newValue,
     );
-  }
 
+    // ✅ Keep unified SRS in sync regardless of service internals
+    await srs.setQuestionSrsStarred(questionId: q.id, starred: newValue);
+  }
 
   Future<void> _onEdit() async {
     final q = _question;
@@ -112,7 +126,7 @@ class _ViewMcqQuestionScreenState extends State<ViewMcqQuestionScreen> {
     );
 
     if (ok == true && mounted) {
-      await _fetch(); // refresh the view
+      await _fetch();
     }
   }
 
@@ -147,8 +161,58 @@ class _ViewMcqQuestionScreenState extends State<ViewMcqQuestionScreen> {
       questionId: q.id,
     );
 
+    // ✅ cleanup unified SRS too (safe even if already deleted)
+    await srs.deleteQuestionSrs(q.id);
+
     if (!mounted) return;
-    Navigator.pop(context, true); // tell Topic screen to refresh list
+    Navigator.pop(context, true);
+  }
+
+  Future<void> _testEasyReview() async {
+    final q = _question;
+    if (q == null) return;
+
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    final srsDocId = 'q_${q.id}';
+
+    final snap = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('srs')
+        .doc(srsDocId)
+        .get();
+
+    if (!snap.exists) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No SRS doc found. Star the question first.'),
+        ),
+      );
+      return;
+    }
+
+    final d = snap.data() ?? {};
+    final reps = (d['reps'] ?? 0) as int;
+    final intervalDays = (d['intervalDays'] ?? 0) as int;
+    final easeFactor = ((d['easeFactor'] ?? 2.5) as num).toDouble();
+    final isStarred = (d['isStarred'] ?? true) as bool;
+
+    await srs.applyReviewUnified(
+      srsDocId: srsDocId,
+      isStarred: isStarred,
+      reps: reps,
+      intervalDays: intervalDays,
+      easeFactor: easeFactor,
+      rating: ReviewRating.easy,
+    );
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Applied EASY review (check dueAt)')),
+    );
   }
 
   @override
@@ -157,72 +221,32 @@ class _ViewMcqQuestionScreenState extends State<ViewMcqQuestionScreen> {
 
     return Scaffold(
       appBar: AppBar(
-  title: const Text('Question'),
-  actions: [
-    if (q != null) ...[
-              IconButton(
-                icon: Icon(q.isStarred ? Icons.star : Icons.star_border),
-                tooltip: q.isStarred ? 'Unstar question' : 'Star question',
-                onPressed: _toggleStar,
-              ),
-              IconButton(
-                icon: const Icon(Icons.edit),
-                tooltip: 'Edit',
-                onPressed: _onEdit,
-              ),
-              IconButton(
-                icon: const Icon(Icons.delete),
-                tooltip: 'Delete',
-                onPressed: _onDelete,
-              ),
-
-              IconButton(
-                icon: const Icon(Icons.bolt),
-                tooltip: 'Test: review EASY',
-                onPressed: () async {
-                  final q = _question;
-                  if (q == null) return;
-
-                  // you need the srs doc to exist already (star first)
-                  final srs = SrsService();
-
-                  // read srs doc current fields (simple fetch)
-                  final snap = await FirebaseFirestore.instance
-                      .collection('users')
-                      .doc(FirebaseAuth.instance.currentUser!.uid)
-                      .collection('srs')
-                      .doc('questions')
-                      .collection('items')
-                      .doc(q.id)
-                      .get();
-
-                  final d = snap.data() ?? {};
-                  final reps = (d['reps'] ?? 0) as int;
-                  final intervalDays = (d['intervalDays'] ?? 0) as int;
-                  final easeFactor = ((d['easeFactor'] ?? 2.5) as num).toDouble();
-                  final isStarred = (d['isStarred'] ?? true) as bool;
-
-                  await srs.applyReview(
-                    collection: SrsCollection.questions,
-                    itemId: q.id,
-                    isStarred: isStarred,
-                    reps: reps,
-                    intervalDays: intervalDays,
-                    easeFactor: easeFactor,
-                    rating: ReviewRating.easy,
-                  );
-
-                  if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Applied EASY review (check Firestore dueAt)')),
-                  );
-                },
-              ),
-
-
-            ],
+        title: const Text('Question'),
+        actions: [
+          if (q != null) ...[
+            IconButton(
+              icon: Icon(q.isStarred ? Icons.star : Icons.star_border),
+              tooltip: q.isStarred ? 'Unstar question' : 'Star question',
+              onPressed: _toggleStar,
+            ),
+            IconButton(
+              icon: const Icon(Icons.edit),
+              tooltip: 'Edit',
+              onPressed: _onEdit,
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete),
+              tooltip: 'Delete',
+              onPressed: _onDelete,
+            ),
+            IconButton(
+              icon: const Icon(Icons.bolt),
+              tooltip: 'Test: review EASY',
+              onPressed: _testEasyReview,
+            ),
           ],
-        ),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : (_error != null)
@@ -268,8 +292,7 @@ class _ViewMcqQuestionScreenState extends State<ViewMcqQuestionScreen> {
                                     ),
                                   ),
                                   Expanded(child: Text(opt.text)),
-                                  if (isCorrect)
-                                    const Icon(Icons.check_circle),
+                                  if (isCorrect) const Icon(Icons.check_circle),
                                 ],
                               ),
                             );

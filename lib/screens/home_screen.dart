@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:srls_app/screens/review/review_queue_screen.dart';
 import '../screens/create_course_screen.dart';
 import '../models/course.dart';
 import 'course_detail_screen.dart';
@@ -76,6 +77,19 @@ Widget build(BuildContext context) {
           ),
 
           const SizedBox(height: 16),
+
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ReviewQueueScreen()
+                ),
+              );
+            },
+            icon: const Icon(Icons.add),
+            label: const Text('Review '),
+          ),
 
                     
           ElevatedButton.icon(

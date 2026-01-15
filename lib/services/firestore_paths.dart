@@ -3,6 +3,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class FsPaths {
   static final db = FirebaseFirestore.instance;
 
+  // -----------------------------
+  // Content hierarchy (existing)
+  // -----------------------------
   static CollectionReference<Map<String, dynamic>> courses() =>
       db.collection('courses');
 
@@ -45,4 +48,28 @@ class FsPaths {
     String questionId,
   ) =>
       questions(courseId, moduleId, topicId).doc(questionId);
+
+  // -----------------------------
+  // ✅ User SRS (NEW unified)
+  // -----------------------------
+  static DocumentReference<Map<String, dynamic>> userDoc(String uid) =>
+      db.collection('users').doc(uid);
+
+  static CollectionReference<Map<String, dynamic>> userSrs(String uid) =>
+      userDoc(uid).collection('srs');
+
+  /// Doc id format:
+  /// - Note: n_{topicId}
+  /// - Question: q_{questionId}
+  static DocumentReference<Map<String, dynamic>> srsNoteDoc(
+    String uid,
+    String topicId,
+  ) =>
+      userSrs(uid).doc('n_$topicId');
+
+  static DocumentReference<Map<String, dynamic>> srsQuestionDoc(
+    String uid,
+    String questionId,
+  ) =>
+      userSrs(uid).doc('q_$questionId');
 }

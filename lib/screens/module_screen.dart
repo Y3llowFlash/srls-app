@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:srls_app/models/review_queue_item.dart';
+import 'package:srls_app/screens/review/review_queue_screen.dart';
+import 'package:srls_app/screens/topic/topic_screen.dart';
+
 import '../../models/topic_model.dart';
 import '../../services/topic_service.dart';
-import '../screens/topic/topic_screen.dart';
-
+import '../../services/review_queue_service.dart';
 class ModuleScreen extends StatelessWidget {
   final String courseId;
   final String moduleId;
@@ -17,7 +21,9 @@ class ModuleScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final service = TopicService();
+    final topicService = TopicService();
+    final reviewService = ReviewQueueService();
+    final uid = FirebaseAuth.instance.currentUser?.uid;
 
     return Scaffold(
       appBar: AppBar(title: Text(moduleTitle)),
@@ -26,6 +32,69 @@ class ModuleScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ✅ Review CTA row (RemNote-style: practice this "document/module")
+            Row(
+              children: [
+                const Text(
+                  'Review',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(width: 10),
+
+                // Due count badge
+                if (uid != null)
+                  StreamBuilder<List<ReviewQueueItem>>(
+                    stream: reviewService.watchDueReviews(
+                      uid: uid,
+                      courseId: courseId,
+                      moduleId: moduleId,
+                      limit: 999, // just for count (MVP)
+                    ),
+                    builder: (context, snap) {
+                      final n = snap.data?.length ?? 0;
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(),
+                        ),
+                        child: Text('Due: $n'),
+                      );
+                    },
+                  )
+                else
+                  const SizedBox.shrink(),
+
+                const Spacer(),
+
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.play_arrow),
+                  label: const Text('Start'),
+                  onPressed: uid == null
+                      ? null
+                      : () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ReviewQueueScreen(
+                                courseId: courseId,
+                                moduleId: moduleId,
+                              ),
+                            ),
+                          );
+                        },
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+            const Divider(height: 1),
+            const SizedBox(height: 16),
+
+            // ✅ Topics header row (your existing UI)
             Row(
               children: [
                 const Text(
@@ -35,14 +104,16 @@ class ModuleScreen extends StatelessWidget {
                 const Spacer(),
                 IconButton(
                   icon: const Icon(Icons.add),
-                  onPressed: () => _showAddTopicDialog(context, service),
+                  onPressed: () => _showAddTopicDialog(context, topicService),
                 ),
               ],
             ),
             const SizedBox(height: 8),
+
+            // ✅ Topic list (unchanged)
             Expanded(
               child: StreamBuilder<List<TopicModel>>(
-                stream: service.watchTopics(courseId, moduleId),
+                stream: topicService.watchTopics(courseId, moduleId),
                 builder: (context, snapshot) {
                   if (snapshot.hasError) return Text('Error: ${snapshot.error}');
                   if (!snapshot.hasData) {
@@ -51,7 +122,9 @@ class ModuleScreen extends StatelessWidget {
 
                   final topics = snapshot.data!;
                   if (topics.isEmpty) {
-                    return const Center(child: Text('No topics yet. Tap + to add one.'));
+                    return const Center(
+                      child: Text('No topics yet. Tap + to add one.'),
+                    );
                   }
 
                   return ListView.separated(
