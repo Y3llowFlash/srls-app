@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:srls_app/models/review_queue_item.dart';
-import 'package:srls_app/screens/review/review_queue_screen.dart';
+import 'package:srls_app/screens/review/review_session_screen.dart';
 import 'package:srls_app/screens/topic/topic_screen.dart';
 
 import '../../models/topic_model.dart';
@@ -79,7 +79,7 @@ class ModuleScreen extends StatelessWidget {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => ReviewQueueScreen(
+                              builder: (_) => ReviewSessionScreen(
                                 courseId: courseId,
                                 moduleId: moduleId,
                               ),

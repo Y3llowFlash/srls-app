@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:srls_app/screens/review/review_item_screen.dart';
 
 import '../../models/review_queue_item.dart';
 import '../../services/review_queue_service.dart';
@@ -141,10 +142,10 @@ class _ReviewQueueScreenState extends State<ReviewQueueScreen> {
                       title: Text('${it.type.toUpperCase()} • ${it.id}'),
                       subtitle: Text('dueAt: ${it.dueAt}'),
                       trailing: const Icon(Icons.chevron_right),
-                      onTap: () {
-                        // Round 2 will open the Review Screen.
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Round 2: open review for ${it.id}')),
+                      onTap: () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => ReviewItemScreen(item: it)),
                         );
                       },
                     );

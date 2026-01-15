@@ -3,6 +3,32 @@ import '../models/review_queue_item.dart';
 import 'firestore_paths.dart';
 
 class ReviewQueueService {
+
+  Future<List<ReviewQueueItem>> getDueReviews({
+    required String uid,
+    String? type,
+    String? courseId,
+    String? moduleId,
+    String? topicId,
+    int limit = 50,
+  }) async {
+    final now = Timestamp.now();
+
+    Query<Map<String, dynamic>> q = FsPaths.userSrs(uid)
+        .where('dueAt', isLessThanOrEqualTo: now)
+        .orderBy('dueAt')
+        .limit(limit);
+
+    if (type != null) q = q.where('type', isEqualTo: type);
+    if (courseId != null) q = q.where('courseId', isEqualTo: courseId);
+    if (moduleId != null) q = q.where('moduleId', isEqualTo: moduleId);
+    if (topicId != null) q = q.where('topicId', isEqualTo: topicId);
+
+    final snap = await q.get();
+    return snap.docs.map((d) => ReviewQueueItem.fromDoc(d)).toList();
+  }
+
+
   Stream<List<ReviewQueueItem>> watchDueReviews({
     required String uid,
     String? type,        // "note" | "question" | null
