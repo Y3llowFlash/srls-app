@@ -65,6 +65,7 @@ class _TopicScreenState extends State<TopicScreen> {
     );
   }
 
+  // ignore: unused_element
   void _startQuestionReview() {
     // Reviews ONLY questions in this topic
     Navigator.push(

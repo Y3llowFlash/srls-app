@@ -7,9 +7,9 @@ import '../../models/mcq_question.dart';
 import '../../services/review_queue_service.dart';
 import '../../services/review_content_service.dart';
 import '../../services/srs_service.dart';
+import '../../services/stats_service.dart';
 import '../../utils/srs_math.dart';
 import 'review_debug_srs_screen.dart';
-
 
 class ReviewSessionScreen extends StatefulWidget {
   const ReviewSessionScreen({
@@ -33,6 +33,7 @@ class _ReviewSessionScreenState extends State<ReviewSessionScreen> {
   final _queue = ReviewQueueService();
   final _content = ReviewContentService();
   final _srs = SrsService();
+  final _stats = StatsService();
 
   bool _loading = true;
   Object? _error;
@@ -71,7 +72,6 @@ class _ReviewSessionScreenState extends State<ReviewSessionScreen> {
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid == null) throw Exception('Not logged in');
 
-      // One-time fetch for a “session”
       final items = await _queue.getDueReviews(
         uid: uid,
         type: widget.type,
@@ -129,6 +129,8 @@ class _ReviewSessionScreenState extends State<ReviewSessionScreen> {
         setState(() => _question = q);
       }
     } catch (e) {
+      // If this happens, it’s usually legacy/orphan SRS pointing to deleted content.
+      // For MVP: show an error but also allow user to move forward by rating "Hard" after reveal.
       if (!mounted) return;
       setState(() => _error = e);
     }
@@ -137,26 +139,35 @@ class _ReviewSessionScreenState extends State<ReviewSessionScreen> {
   Future<void> _rate(ReviewRating rating) async {
     final it = _items[_index];
 
-    await _srs.applyReviewUnified(
-      srsDocId: it.id,
-      isStarred: true,
-      reps: it.reps,
-      intervalDays: it.intervalDays,
-      easeFactor: it.easeFactor,
-      rating: rating,
-    );
+    // Guard: don’t allow rating until reveal (Anki/RemNote feel)
+    if (!_revealed) return;
 
-    // Move to next card in session
+    try {
+      await _srs.applyReviewUnified(
+        srsDocId: it.id,
+        isStarred: true,
+        reps: it.reps,
+        intervalDays: it.intervalDays,
+        easeFactor: it.easeFactor,
+        rating: rating,
+      );
+
+      // ✅ Progress + streak update after each successful review
+      await _stats.recordReview(defaultGoal: 20);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e);
+      return;
+    }
+
     if (!mounted) return;
 
     setState(() {
       _index += 1;
+      _error = null; // clear any prior content error once review passes
     });
 
-    if (_index >= _items.length) {
-      // Session done
-      return;
-    }
+    if (_index >= _items.length) return;
 
     await _loadCurrentContent();
   }
@@ -166,27 +177,6 @@ class _ReviewSessionScreenState extends State<ReviewSessionScreen> {
     if (_loading) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    if (_error != null) {
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text('Review'),
-           actions: [
-            IconButton(
-              icon: const Icon(Icons.bug_report),
-              tooltip: 'Debug SRS',
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const ReviewDebugSrsScreen()),
-                );
-              },
-            ),
-          ], 
-        ),
-        body: Center(child: Text('Error: $_error')),
       );
     }
 
@@ -205,8 +195,7 @@ class _ReviewSessionScreenState extends State<ReviewSessionScreen> {
                 );
               },
             ),
-          ], 
-          
+          ],
         ),
         body: const Center(child: Text('No reviews due 🎉')),
       );
@@ -243,6 +232,16 @@ class _ReviewSessionScreenState extends State<ReviewSessionScreen> {
               child: Text('${_index + 1}/${_items.length}'),
             ),
           ),
+          IconButton(
+            icon: const Icon(Icons.bug_report),
+            tooltip: 'Debug SRS',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ReviewDebugSrsScreen()),
+              );
+            },
+          ),
         ],
       ),
       body: Padding(
@@ -252,7 +251,16 @@ class _ReviewSessionScreenState extends State<ReviewSessionScreen> {
             Expanded(child: _buildCard(it)),
             const SizedBox(height: 12),
 
-            // Reveal + rating row
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Text(
+                  'Content issue: $_error',
+                  style: const TextStyle(color: Colors.red),
+                ),
+              ),
+
+            // Reveal + rating
             if (!_revealed)
               SizedBox(
                 width: double.infinity,
@@ -293,7 +301,6 @@ class _ReviewSessionScreenState extends State<ReviewSessionScreen> {
   }
 
   Widget _buildCard(ReviewQueueItem it) {
-    // Loading content placeholders
     if (it.type == 'note' && _topic == null) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -301,7 +308,6 @@ class _ReviewSessionScreenState extends State<ReviewSessionScreen> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    // ✅ Note card
     if (it.type == 'note') {
       final t = _topic!;
       return Container(
@@ -326,7 +332,6 @@ class _ReviewSessionScreenState extends State<ReviewSessionScreen> {
       );
     }
 
-    // ✅ Question card
     final q = _question!;
     return Container(
       padding: const EdgeInsets.all(16),
@@ -341,10 +346,12 @@ class _ReviewSessionScreenState extends State<ReviewSessionScreen> {
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 14),
-          ...q.options.map((o) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text('${o.id}. ${o.text}'),
-              )),
+          ...q.options.map(
+            (o) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text('${o.id}. ${o.text}'),
+            ),
+          ),
           const SizedBox(height: 12),
           if (_revealed)
             Text(
