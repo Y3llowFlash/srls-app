@@ -2,27 +2,31 @@ class TopicModel {
   final String id;
   final String title;
   final String notes;
-  final bool isStarredNote;
+  final String videoType; // none | youtube | storage
   final String? videoUrl;
-  
+  final bool isStarredNote;
 
   TopicModel({
     required this.id,
     required this.title,
     required this.notes,
-    required this.isStarredNote,
+    required this.videoType,
     required this.videoUrl,
+    required this.isStarredNote,
   });
 
   factory TopicModel.fromMap(String id, Map<String, dynamic> data) {
+    final rawUrl = (data['videoUrl'] as String?)?.trim();
+    final inferredType = (data['videoType'] as String?) ??
+        ((rawUrl == null || rawUrl.isEmpty) ? 'none' : 'youtube');
+
     return TopicModel(
       id: id,
-      title: (data['title'] ?? '') as String,
-      notes: (data['notes'] ?? '') as String,
-      isStarredNote: (data['isStarredNote'] ?? false) as bool,
-      videoUrl: (data['videoUrl'] as String?)?.trim().isEmpty == true
-          ? null
-          : (data['videoUrl'] as String?),
+      title: data['title'] ?? '',
+      notes: data['notes'] ?? '',
+      videoType: inferredType,
+      videoUrl: rawUrl,
+      isStarredNote: data['isStarredNote'] ?? false,
     );
   }
 }

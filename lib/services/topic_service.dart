@@ -9,23 +9,38 @@ class TopicService {
     return FsPaths.topics(courseId, moduleId)
         .orderBy('createdAt', descending: false)
         .snapshots()
-        .map((snap) => snap.docs
-            .map((d) => TopicModel.fromMap(d.id, d.data()))
-            .toList());
+        .map(
+          (snap) => snap.docs
+              .map((d) => TopicModel.fromMap(d.id, d.data()))
+              .toList(),
+        );
   }
 
-  /// ✅ This matches your ModuleScreen usage
+  /// ✅ Round 2: create topic with videoType + videoUrl
+  /// videoType: "none" | "youtube" | "storage"
+  /// videoUrl:
+  ///   - youtube: full youtube link
+  ///   - storage: firebase storage path like "videos/courseId/moduleId/topicId.mp4"
+  ///   - none: empty string
   Future<void> addTopic({
     required String courseId,
     required String moduleId,
     required String title,
     String? notes,
+    String videoType = 'none',
     String? videoUrl,
   }) async {
+    final cleanType = (videoType.trim().isEmpty) ? 'none' : videoType.trim();
+    final cleanUrl = (videoUrl ?? '').trim();
+
     await FsPaths.topics(courseId, moduleId).add({
-      'title': title,
-      'notes': notes ?? '',
-      'videoUrl': videoUrl ?? '',
+      'title': title.trim(),
+      'notes': (notes ?? '').trim(),
+
+      // ✅ new fields
+      'videoType': cleanType,
+      'videoUrl': cleanUrl,
+
       'isStarredNote': false,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
@@ -48,25 +63,39 @@ class TopicService {
     );
   }
 
-  /// (Optional) Update notes/video/title
+  /// ✅ Round 2: Update notes/video/title (+ videoType)
+  /// Use this for edit later (Round 3)
   Future<void> updateTopic({
     required String courseId,
     required String moduleId,
     required String topicId,
     String? title,
     String? notes,
+    String? videoType, // "none" | "youtube" | "storage"
     String? videoUrl,
   }) async {
     final data = <String, dynamic>{
       'updatedAt': FieldValue.serverTimestamp(),
     };
-    if (title != null) data['title'] = title;
-    if (notes != null) data['notes'] = notes;
-    if (videoUrl != null) data['videoUrl'] = videoUrl;
+
+    if (title != null) data['title'] = title.trim();
+    if (notes != null) data['notes'] = notes.trim();
+
+    if (videoType != null) data['videoType'] = videoType.trim();
+    if (videoUrl != null) data['videoUrl'] = videoUrl.trim();
 
     await FsPaths.topics(courseId, moduleId).doc(topicId).set(
       data,
       SetOptions(merge: true),
     );
+  }
+
+  /// ✅ Utility: get topic doc reference (helps module_screen upload flow if needed)
+  DocumentReference<Map<String, dynamic>> topicDocRef({
+    required String courseId,
+    required String moduleId,
+    required String topicId,
+  }) {
+    return FsPaths.topics(courseId, moduleId).doc(topicId);
   }
 }

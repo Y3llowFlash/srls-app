@@ -6,6 +6,7 @@ import 'package:srls_app/screens/review/review_session_screen.dart';
 
 import '../../models/module_model.dart';
 import '../../models/review_queue_item.dart';
+import '../../services/firestore_paths.dart';
 import '../../services/module_service.dart';
 import '../../services/review_queue_service.dart';
 
@@ -31,7 +32,7 @@ class CourseDetailScreen extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            // ✅ Course Review row (like Module)
+            // ✅ Course Review row
             Row(
               children: [
                 const Text(
@@ -49,7 +50,10 @@ class CourseDetailScreen extends StatelessWidget {
                     builder: (context, snap) {
                       final n = snap.data?.length ?? 0;
                       return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(),
@@ -68,7 +72,9 @@ class CourseDetailScreen extends StatelessWidget {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => ReviewSessionScreen(courseId: courseId),
+                              builder: (_) => ReviewSessionScreen(
+                                courseId: courseId,
+                              ),
                             ),
                           );
                         },
@@ -79,6 +85,27 @@ class CourseDetailScreen extends StatelessWidget {
             const SizedBox(height: 16),
             const Divider(height: 1),
             const SizedBox(height: 16),
+
+            // ✅ Modules header row (THIS was missing)
+            Row(
+              children: [
+                const Text(
+                  'Modules',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.add),
+                  tooltip: 'Create module',
+                  onPressed: () => _showAddModuleDialog(
+                    context: context,
+                    service: service,
+                    courseId: courseId,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
 
             // Modules list
             Expanded(
@@ -92,7 +119,9 @@ class CourseDetailScreen extends StatelessWidget {
 
                   final modules = snapshot.data!;
                   if (modules.isEmpty) {
-                    return const Center(child: Text('No modules yet.'));
+                    return const Center(
+                      child: Text('No modules yet. Tap + to add one.'),
+                    );
                   }
 
                   return ListView.separated(
@@ -123,6 +152,73 @@ class CourseDetailScreen extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<void> _showAddModuleDialog({
+    required BuildContext context,
+    required ModuleService service,
+    required String courseId,
+  }) async {
+    final titleCtrl = TextEditingController();
+    bool saving = false;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => StatefulBuilder(
+        builder: (dialogContext, setState) {
+          Future<void> add() async {
+            final title = titleCtrl.text.trim();
+            if (title.isEmpty) return;
+
+            setState(() => saving = true);
+
+            try {
+              // ✅ order = current number of modules
+              final snap = await FsPaths.modules(courseId).get();
+              final order = snap.size;
+
+              await service.addModule(
+                courseId: courseId,
+                title: title,
+                order: order,
+              );
+
+              if (!dialogContext.mounted) return;
+              Navigator.pop(dialogContext);
+            } catch (e) {
+              if (!dialogContext.mounted) return;
+              setState(() => saving = false);
+              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                SnackBar(content: Text('Failed to create module: $e')),
+              );
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('Create Module'),
+            content: TextField(
+              controller: titleCtrl,
+              enabled: !saving,
+              decoration: const InputDecoration(
+                labelText: 'Module title',
+              ),
+              onSubmitted: (_) => saving ? null : add(),
+            ),
+            actions: [
+              TextButton(
+                onPressed: saving ? null : () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: saving ? null : add,
+                child: const Text('Add'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

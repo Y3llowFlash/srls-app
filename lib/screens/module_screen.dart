@@ -1,12 +1,20 @@
-import 'package:flutter/material.dart';
+import 'dart:io';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/material.dart';
+
 import 'package:srls_app/models/review_queue_item.dart';
 import 'package:srls_app/screens/review/review_session_screen.dart';
 import 'package:srls_app/screens/topic/topic_screen.dart';
 
 import '../../models/topic_model.dart';
+import '../../services/firestore_paths.dart';
 import '../../services/topic_service.dart';
 import '../../services/review_queue_service.dart';
+
 class ModuleScreen extends StatelessWidget {
   final String courseId;
   final String moduleId;
@@ -32,7 +40,7 @@ class ModuleScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ✅ Review CTA row (RemNote-style: practice this "document/module")
+            // ✅ Review CTA row
             Row(
               children: [
                 const Text(
@@ -41,14 +49,13 @@ class ModuleScreen extends StatelessWidget {
                 ),
                 const SizedBox(width: 10),
 
-                // Due count badge
                 if (uid != null)
                   StreamBuilder<List<ReviewQueueItem>>(
                     stream: reviewService.watchDueReviews(
                       uid: uid,
                       courseId: courseId,
                       moduleId: moduleId,
-                      limit: 999, // just for count (MVP)
+                      limit: 999,
                     ),
                     builder: (context, snap) {
                       final n = snap.data?.length ?? 0;
@@ -94,7 +101,7 @@ class ModuleScreen extends StatelessWidget {
             const Divider(height: 1),
             const SizedBox(height: 16),
 
-            // ✅ Topics header row (your existing UI)
+            // ✅ Topics header row
             Row(
               children: [
                 const Text(
@@ -104,13 +111,13 @@ class ModuleScreen extends StatelessWidget {
                 const Spacer(),
                 IconButton(
                   icon: const Icon(Icons.add),
-                  onPressed: () => _showAddTopicDialog(context, topicService),
+                  onPressed: () => _showAddTopicDialog(context),
                 ),
               ],
             ),
             const SizedBox(height: 8),
 
-            // ✅ Topic list (unchanged)
+            // ✅ Topic list
             Expanded(
               child: StreamBuilder<List<TopicModel>>(
                 stream: topicService.watchTopics(courseId, moduleId),
@@ -132,11 +139,20 @@ class ModuleScreen extends StatelessWidget {
                     separatorBuilder: (_, __) => const Divider(height: 1),
                     itemBuilder: (context, i) {
                       final t = topics[i];
+
+                      final type = t.videoType.trim();
+                      final hasVideo =
+                          t.videoUrl != null && t.videoUrl!.trim().isNotEmpty;
+
+                      final subtitle = (!hasVideo || type == 'none')
+                          ? 'No video'
+                          : (type == 'youtube')
+                              ? '🔗 YouTube video'
+                              : '🎥 Uploaded video';
+
                       return ListTile(
                         title: Text(t.title),
-                        subtitle: (t.videoUrl != null)
-                            ? const Text('🎥 Video attached')
-                            : const Text('No video'),
+                        subtitle: Text(subtitle),
                         trailing: const Icon(Icons.chevron_right),
                         onTap: () {
                           Navigator.push(
@@ -166,66 +182,260 @@ class ModuleScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _showAddTopicDialog(
-    BuildContext context,
-    TopicService service,
-  ) async {
+  Future<void> _showAddTopicDialog(BuildContext context) async {
     final titleCtrl = TextEditingController();
     final notesCtrl = TextEditingController();
-    final videoCtrl = TextEditingController();
+    final youtubeCtrl = TextEditingController();
 
-    final ok = await showDialog<bool>(
+    String selected = 'none'; // none | youtube | upload
+    File? pickedFile;
+    bool saving = false;
+
+    Future<String> uploadToStorage({
+      required String courseId,
+      required String moduleId,
+      required String topicId,
+      required File file,
+    }) async {
+      final ext = file.path.contains('.')
+          ? file.path.substring(file.path.lastIndexOf('.'))
+          : '.mp4';
+
+      final storagePath = 'videos/$courseId/$moduleId/$topicId$ext';
+      final ref = FirebaseStorage.instance.ref(storagePath);
+      await ref.putFile(file);
+      return storagePath;
+    }
+
+    await showDialog<void>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Add Topic'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: titleCtrl,
-                decoration: const InputDecoration(labelText: 'Topic title'),
+      barrierDismissible: false,
+      builder: (_) => StatefulBuilder(
+        builder: (dialogContext, setState) {
+          Future<void> save() async {
+            final title = titleCtrl.text.trim();
+            final notes = notesCtrl.text.trim();
+            final yt = youtubeCtrl.text.trim();
+
+            if (title.isEmpty) {
+              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                const SnackBar(content: Text('Topic title is required.')),
+              );
+              return;
+            }
+            if (selected == 'youtube' && yt.isEmpty) {
+              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                const SnackBar(content: Text('Please paste a YouTube link.')),
+              );
+              return;
+            }
+            if (selected == 'upload' && pickedFile == null) {
+              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                const SnackBar(content: Text('Please choose a video file.')),
+              );
+              return;
+            }
+
+            setState(() => saving = true);
+
+            final doc = FsPaths.topics(courseId, moduleId).doc();
+
+            String videoType = 'none';
+            String videoUrl = '';
+
+            try {
+              if (selected == 'youtube') {
+                videoType = 'youtube';
+                videoUrl = yt;
+              } else if (selected == 'upload') {
+                videoType = 'storage';
+                videoUrl = await uploadToStorage(
+                  courseId: courseId,
+                  moduleId: moduleId,
+                  topicId: doc.id,
+                  file: pickedFile!,
+                );
+              }
+
+              await doc.set({
+                'title': title,
+                'notes': notes,
+                'videoType': videoType,
+                'videoUrl': videoUrl,
+                'isStarredNote': false,
+                'createdAt': FieldValue.serverTimestamp(),
+                'updatedAt': FieldValue.serverTimestamp(),
+              });
+
+              if (!dialogContext.mounted) {
+                return;
+              }
+              Navigator.pop(dialogContext);
+            } catch (e) {
+              if (!dialogContext.mounted) {
+                return;
+              }
+              setState(() => saving = false);
+              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                SnackBar(content: Text('Failed to add topic: $e')),
+              );
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('Add Topic'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: titleCtrl,
+                    enabled: !saving,
+                    decoration: const InputDecoration(labelText: 'Topic title'),
+                  ),
+                  TextField(
+                    controller: notesCtrl,
+                    enabled: !saving,
+                    decoration: const InputDecoration(labelText: 'Notes'),
+                    minLines: 3,
+                    maxLines: 6,
+                  ),
+                  const SizedBox(height: 16),
+
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Video',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+
+                  // ignore: deprecated_member_use
+                  RadioListTile<String>(
+                    value: 'none',
+                    groupValue: selected,
+                    onChanged: saving
+                        ? null
+                        : (v) {
+                            if (v == null) return;
+                            setState(() {
+                              selected = v;
+                              youtubeCtrl.clear();
+                              pickedFile = null;
+                            });
+                          },
+                    title: const Text('No video'),
+                  ),
+
+                  // ignore: deprecated_member_use
+                  RadioListTile<String>(
+                    value: 'youtube',
+                    groupValue: selected,
+                    onChanged: saving
+                        ? null
+                        : (v) {
+                            if (v == null) return;
+                            setState(() {
+                              selected = v;
+                              pickedFile = null;
+                            });
+                          },
+                    title: const Text('YouTube link'),
+                  ),
+
+                  if (selected == 'youtube')
+                    TextField(
+                      controller: youtubeCtrl,
+                      enabled: !saving,
+                      decoration: const InputDecoration(
+                        labelText: 'YouTube URL',
+                        hintText:
+                            'https://youtu.be/... or https://youtube.com/watch?v=...',
+                      ),
+                    ),
+
+                  // ignore: deprecated_member_use
+                  RadioListTile<String>(
+                    value: 'upload',
+                    groupValue: selected,
+                    onChanged: saving
+                        ? null
+                        : (v) {
+                            if (v == null) return;
+                            setState(() {
+                              selected = v;
+                              youtubeCtrl.clear();
+                            });
+                          },
+                    title: const Text('Upload video'),
+                  ),
+
+                  if (selected == 'upload')
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            pickedFile == null
+                                ? 'No file selected'
+                                : pickedFile!.path
+                                    .split(Platform.pathSeparator)
+                                    .last,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.upload_file),
+                          label: const Text('Choose'),
+                          onPressed: saving
+                              ? null
+                              : () async {
+                                  final result =
+                                      await FilePicker.platform.pickFiles(
+                                    type: FileType.video,
+                                    allowMultiple: false,
+                                  );
+                                  if (result == null || result.files.isEmpty) {
+                                    return;
+                                  }
+                                  final path = result.files.single.path;
+                                  if (path == null) return;
+
+                                  setState(() {
+                                    pickedFile = File(path);
+                                  });
+                                },
+                        ),
+                      ],
+                    ),
+
+                  if (saving) ...[
+                    const SizedBox(height: 12),
+                    const LinearProgressIndicator(),
+                    const SizedBox(height: 8),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('Saving...'),
+                    ),
+                  ],
+                ],
               ),
-              TextField(
-                controller: notesCtrl,
-                decoration: const InputDecoration(labelText: 'Notes'),
-                minLines: 3,
-                maxLines: 6,
+            ),
+            actions: [
+              TextButton(
+                onPressed: saving ? null : () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
               ),
-              TextField(
-                controller: videoCtrl,
-                decoration: const InputDecoration(labelText: 'Video URL (optional)'),
+              ElevatedButton(
+                onPressed: saving ? null : save,
+                child: const Text('Add'),
               ),
             ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Add'),
-          ),
-        ],
+          );
+        },
       ),
-    );
-
-    if (ok != true) return;
-
-    final title = titleCtrl.text.trim();
-    final notes = notesCtrl.text.trim();
-    final videoUrl = videoCtrl.text.trim();
-
-    if (title.isEmpty) return;
-
-    await service.addTopic(
-      courseId: courseId,
-      moduleId: moduleId,
-      title: title,
-      notes: notes,
-      videoUrl: videoUrl.isEmpty ? null : videoUrl,
     );
   }
 }
