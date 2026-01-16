@@ -10,6 +10,7 @@ import '../../services/srs_service.dart';
 import '../../services/stats_service.dart';
 import '../../utils/srs_math.dart';
 import 'review_debug_srs_screen.dart';
+import '../../widgets/mcq_storage_image.dart';
 
 class ReviewSessionScreen extends StatefulWidget {
   const ReviewSessionScreen({
@@ -345,14 +346,49 @@ class _ReviewSessionScreenState extends State<ReviewSessionScreen> {
             q.questionText,
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
+
+          // ✅ Question images (0..3)
+          if (q.questionImagePaths.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            ...q.questionImagePaths
+                .where((p) => p.trim().isNotEmpty)
+                .map(
+                  (p) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: McqStorageImage(path: p, height: 200),
+                  ),
+                ),
+          ],
+
           const SizedBox(height: 14),
-          ...q.options.map(
-            (o) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text('${o.id}. ${o.text}'),
-            ),
-          ),
+
+          // ✅ Options (text + optional image)
+          ...q.options.map((o) {
+            final img = o.imagePath?.trim();
+            final hasImg = img != null && img.isNotEmpty;
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                border: Border.all(),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('${o.id}. ${o.text}'),
+                  if (hasImg) ...[
+                    const SizedBox(height: 8),
+                    McqStorageImage(path: img, height: 140),
+                  ],
+                ],
+              ),
+            );
+          }),
+
           const SizedBox(height: 12),
+
           if (_revealed)
             Text(
               '✅ Correct: ${q.correctOptionId}',
@@ -361,5 +397,7 @@ class _ReviewSessionScreenState extends State<ReviewSessionScreen> {
         ],
       ),
     );
+
+    
   }
 }

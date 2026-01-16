@@ -6,6 +6,7 @@ import '../../models/mcq_question.dart';
 import '../../services/question_service.dart';
 import '../../services/srs_service.dart';
 import '../../utils/srs_math.dart';
+import '../../widgets/mcq_storage_image.dart';
 import 'create_mcq_question_screen.dart';
 
 class ViewMcqQuestionScreen extends StatefulWidget {
@@ -72,19 +73,10 @@ class _ViewMcqQuestionScreenState extends State<ViewMcqQuestionScreen> {
 
     final newValue = !q.isStarred;
 
-    // optimistic UI update
     setState(() {
-      _question = McqQuestion(
-        id: q.id,
-        questionText: q.questionText,
-        options: q.options,
-        correctOptionId: q.correctOptionId,
-        isStarred: newValue,
-        questionImageMediaId: q.questionImageMediaId,
-      );
+      _question = q.copyWith(isStarred: newValue);
     });
 
-    // ✅ Ensure SRS doc exists when starring
     if (newValue) {
       await srs.ensureQuestionSrs(
         courseId: widget.courseId,
@@ -95,7 +87,6 @@ class _ViewMcqQuestionScreenState extends State<ViewMcqQuestionScreen> {
       );
     }
 
-    // This should also internally set SRS starred, but even if not, we do it safely:
     await service.setStarQuestion(
       courseId: widget.courseId,
       moduleId: widget.moduleId,
@@ -104,7 +95,6 @@ class _ViewMcqQuestionScreenState extends State<ViewMcqQuestionScreen> {
       starred: newValue,
     );
 
-    // ✅ Keep unified SRS in sync regardless of service internals
     await srs.setQuestionSrsStarred(questionId: q.id, starred: newValue);
   }
 
@@ -154,6 +144,14 @@ class _ViewMcqQuestionScreenState extends State<ViewMcqQuestionScreen> {
 
     if (confirm != true) return;
 
+    // cleanup known image paths
+    for (final p in q.questionImagePaths) {
+      await service.deleteStoragePathIfAny(p);
+    }
+    for (final o in q.options) {
+      await service.deleteStoragePathIfAny(o.imagePath);
+    }
+
     await service.deleteMcqQuestion(
       courseId: widget.courseId,
       moduleId: widget.moduleId,
@@ -161,7 +159,6 @@ class _ViewMcqQuestionScreenState extends State<ViewMcqQuestionScreen> {
       questionId: q.id,
     );
 
-    // ✅ cleanup unified SRS too (safe even if already deleted)
     await srs.deleteQuestionSrs(q.id);
 
     if (!mounted) return;
@@ -187,9 +184,7 @@ class _ViewMcqQuestionScreenState extends State<ViewMcqQuestionScreen> {
     if (!snap.exists) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No SRS doc found. Star the question first.'),
-        ),
+        const SnackBar(content: Text('No SRS doc found. Star the question first.')),
       );
       return;
     }
@@ -266,16 +261,29 @@ class _ViewMcqQuestionScreenState extends State<ViewMcqQuestionScreen> {
                               ],
                             ),
                           const SizedBox(height: 12),
+
                           Text(
                             q.questionText,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
+                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 12),
+
+                          if (q.questionImagePaths.isNotEmpty) ...[
+                            const Text('Diagrams'),
+                            const SizedBox(height: 8),
+                            ...q.questionImagePaths.map((p) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 10),
+                                  child: McqStorageImage(path: p),
+                                )),
+                            const SizedBox(height: 12),
+                          ],
+
+                          const Text('Options'),
+                          const SizedBox(height: 8),
+
                           ...q.options.map((opt) {
                             final isCorrect = opt.id == q.correctOptionId;
+
                             return Container(
                               margin: const EdgeInsets.only(bottom: 10),
                               padding: const EdgeInsets.all(12),
@@ -283,25 +291,30 @@ class _ViewMcqQuestionScreenState extends State<ViewMcqQuestionScreen> {
                                 border: Border.all(),
                                 borderRadius: BorderRadius.circular(10),
                               ),
-                              child: Row(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    '${opt.id}. ',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
+                                  Row(
+                                    children: [
+                                      Text(
+                                        '${opt.id}. ',
+                                        style: const TextStyle(fontWeight: FontWeight.bold),
+                                      ),
+                                      Expanded(child: Text(opt.text.isEmpty ? '(no text)' : opt.text)),
+                                      if (isCorrect) const Icon(Icons.check_circle),
+                                    ],
                                   ),
-                                  Expanded(child: Text(opt.text)),
-                                  if (isCorrect) const Icon(Icons.check_circle),
+                                  if ((opt.imagePath ?? '').trim().isNotEmpty) ...[
+                                    const SizedBox(height: 10),
+                                    McqStorageImage(path: opt.imagePath!.trim(), height: 160),
+                                  ],
                                 ],
                               ),
                             );
                           }),
+
                           const SizedBox(height: 10),
-                          Text(
-                            'Correct Answer: ${q.correctOptionId}',
-                            style: const TextStyle(fontSize: 16),
-                          ),
+                          Text('Correct Answer: ${q.correctOptionId}', style: const TextStyle(fontSize: 16)),
                         ],
                       ),
                     ),

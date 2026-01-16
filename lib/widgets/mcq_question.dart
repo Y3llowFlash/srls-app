@@ -1,15 +1,16 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'mcq_option.dart';
+
+import 'package:srls_app/models/mcq_option.dart';
 
 class McqQuestion {
-  final String id;
+  final String id; // Firestore doc id
   final String questionText;
 
-  /// 0..3 images stored as Firebase Storage paths
+  /// Optional images for the question (0..3). Each is a Firebase Storage path.
   final List<String> questionImagePaths;
 
   final List<McqOption> options;
-  final String correctOptionId;
+  final String correctOptionId; // "A"/"B"/"C"/"D"
   final bool isStarred;
 
   final Timestamp? createdAt;
@@ -18,25 +19,26 @@ class McqQuestion {
   McqQuestion({
     required this.id,
     required this.questionText,
+    this.questionImagePaths = const [],
     required this.options,
     required this.correctOptionId,
-    required this.isStarred,
-    this.questionImagePaths = const [],
+    this.isStarred = false,
     this.createdAt,
     this.updatedAt,
   });
 
+  /// Read from Firestore
   factory McqQuestion.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
-    final data = doc.data() ?? {};
+    final data = doc.data()!;
     final rawOptions = (data['options'] as List?) ?? [];
 
-    // backward compatible:
-    // old: questionImageMediaId (String)
-    // new: questionImagePaths (List<String>)
+    // Backward compatible:
+    // - new: questionImagePaths (List<String>)
+    // - legacy: questionImageMediaId (String)
     final List<String> imgPaths = [];
-    final rawList = data['questionImagePaths'];
-    if (rawList is List) {
-      imgPaths.addAll(rawList.whereType<String>());
+    final rawImgList = data['questionImagePaths'];
+    if (rawImgList is List) {
+      imgPaths.addAll(rawImgList.whereType<String>());
     } else {
       final legacy = data['questionImageMediaId'];
       if (legacy is String && legacy.trim().isNotEmpty) {
@@ -46,18 +48,17 @@ class McqQuestion {
 
     return McqQuestion(
       id: doc.id,
-      questionText: (data['questionText'] ?? '') as String,
+      questionText: data['questionText'] ?? '',
       questionImagePaths: imgPaths,
-      options: rawOptions
-          .map((e) => McqOption.fromMap(Map<String, dynamic>.from(e as Map)))
-          .toList(),
-      correctOptionId: (data['correctOptionId'] ?? 'A') as String,
-      isStarred: (data['isStarred'] ?? false) as bool,
-      createdAt: data['createdAt'] as Timestamp?,
-      updatedAt: data['updatedAt'] as Timestamp?,
+      options: rawOptions.map((o) => McqOption.fromMap(Map<String, dynamic>.from(o))).toList(),
+      correctOptionId: data['correctOptionId'] ?? 'A',
+      isStarred: data['isStarred'] ?? false,
+      createdAt: data['createdAt'],
+      updatedAt: data['updatedAt'],
     );
   }
 
+  /// Write when creating
   Map<String, dynamic> toMapForCreate() {
     return {
       'questionText': questionText,
@@ -70,6 +71,7 @@ class McqQuestion {
     };
   }
 
+  /// Write when updating
   Map<String, dynamic> toMapForUpdate() {
     return {
       'questionText': questionText,
