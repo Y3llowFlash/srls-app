@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:video_player/video_player.dart';
+import 'package:chewie/chewie.dart';
 
 class TopicVideoPlayer extends StatefulWidget {
-  final String? videoUrl; // youtube link OR storage path like "videos/..../file.mp4"
+  final String? videoUrl; // youtube link OR storage path like "videos/.../file.mp4"
 
   const TopicVideoPlayer({
     super.key,
@@ -17,12 +18,12 @@ class TopicVideoPlayer extends StatefulWidget {
 
 class _TopicVideoPlayerState extends State<TopicVideoPlayer> {
   YoutubePlayerController? _ytController;
+
   VideoPlayerController? _videoController;
+  ChewieController? _chewieController;
 
   bool _loading = true;
   bool _error = false;
-
-  bool _showControls = true;
 
   @override
   void initState() {
@@ -42,7 +43,7 @@ class _TopicVideoPlayerState extends State<TopicVideoPlayer> {
     }
 
     // -----------------------------
-    // YOUTUBE (http links)
+    // YOUTUBE
     // -----------------------------
     if (raw.startsWith('http')) {
       final id = YoutubePlayer.convertUrlToId(raw);
@@ -68,7 +69,7 @@ class _TopicVideoPlayerState extends State<TopicVideoPlayer> {
     }
 
     // -----------------------------
-    // FIREBASE STORAGE (path)
+    // FIREBASE STORAGE
     // -----------------------------
     try {
       final ref = FirebaseStorage.instance.ref(raw);
@@ -77,11 +78,20 @@ class _TopicVideoPlayerState extends State<TopicVideoPlayer> {
       _videoController = VideoPlayerController.networkUrl(Uri.parse(downloadUrl));
       await _videoController!.initialize();
 
-      // update UI as position changes (for timeline/time labels)
-      _videoController!.addListener(() {
-        if (!mounted) return;
-        setState(() {});
-      });
+      _chewieController = ChewieController(
+        videoPlayerController: _videoController!,
+        autoPlay: false,
+        looping: false,
+        allowFullScreen: true,
+        allowMuting: true,
+        showControls: true,
+        materialProgressColors: ChewieProgressColors(
+          playedColor: Colors.redAccent,
+          handleColor: Colors.redAccent,
+          backgroundColor: Colors.white24,
+          bufferedColor: Colors.white38,
+        ),
+      );
 
       setState(() => _loading = false);
     } catch (_) {
@@ -95,18 +105,10 @@ class _TopicVideoPlayerState extends State<TopicVideoPlayer> {
   @override
   void dispose() {
     _ytController?.dispose();
+    _chewieController?.dispose();
     _videoController?.dispose();
     super.dispose();
   }
-
-  String _fmt(Duration d) {
-    String two(int n) => n.toString().padLeft(2, '0');
-    final hours = d.inHours;
-    final minutes = d.inMinutes.remainder(60);
-    final seconds = d.inSeconds.remainder(60);
-    if (hours > 0) return '${two(hours)}:${two(minutes)}:${two(seconds)}';
-    return '${two(minutes)}:${two(seconds)}';
-    }
 
   @override
   Widget build(BuildContext context) {
@@ -137,9 +139,7 @@ class _TopicVideoPlayerState extends State<TopicVideoPlayer> {
       );
     }
 
-    // -----------------------------
     // YOUTUBE
-    // -----------------------------
     if (_ytController != null) {
       return YoutubePlayer(
         controller: _ytController!,
@@ -148,93 +148,19 @@ class _TopicVideoPlayerState extends State<TopicVideoPlayer> {
       );
     }
 
-    // -----------------------------
-    // STORAGE VIDEO (with timeline)
-    // -----------------------------
-    final vc = _videoController;
-    if (vc == null) return const SizedBox.shrink();
-
-    final isPlaying = vc.value.isPlaying;
-    final position = vc.value.position;
-    final duration = vc.value.duration;
-
-    return AspectRatio(
-      aspectRatio: vc.value.aspectRatio == 0 ? (16 / 9) : vc.value.aspectRatio,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Stack(
-          children: [
-            GestureDetector(
-              onTap: () => setState(() => _showControls = !_showControls),
-              child: VideoPlayer(vc),
-            ),
-
-            // Big play button (center)
-            if (_showControls)
-              Center(
-                child: IconButton(
-                  iconSize: 64,
-                  icon: Icon(
-                    isPlaying ? Icons.pause_circle : Icons.play_circle,
-                  ),
-                  onPressed: () async {
-                    if (isPlaying) {
-                      await vc.pause();
-                    } else {
-                      await vc.play();
-                    }
-                    if (mounted) setState(() {});
-                  },
-                ),
-              ),
-
-            // Bottom controls: time + scrub bar
-            if (_showControls)
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.black.withOpacity(0.0),
-                        Colors.black.withOpacity(0.65),
-                      ],
-                    ),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Scrubbable progress bar (built-in!)
-                      VideoProgressIndicator(
-                        vc,
-                        allowScrubbing: true,
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                      ),
-                      Row(
-                        children: [
-                          Text(
-                            _fmt(position),
-                            style: const TextStyle(color: Colors.white, fontSize: 12),
-                          ),
-                          const Spacer(),
-                          Text(
-                            _fmt(duration),
-                            style: const TextStyle(color: Colors.white, fontSize: 12),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-          ],
+    // STORAGE (Chewie)
+    if (_chewieController != null) {
+      return AspectRatio(
+        aspectRatio: _videoController?.value.aspectRatio == 0
+            ? (16 / 9)
+            : (_videoController!.value.aspectRatio),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Chewie(controller: _chewieController!),
         ),
-      ),
-    );
+      );
+    }
+
+    return const SizedBox.shrink();
   }
 }
