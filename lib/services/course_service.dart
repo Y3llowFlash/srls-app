@@ -11,7 +11,7 @@ class CourseService {
     final s = (raw ?? '').toString().trim();
     if (s.isEmpty) throw Exception('Invalid courseId in invite');
 
-    // Accept either:
+    // Accept:
     //  - "54nsPSFChWZVGv5Rjvp8"
     //  - "courses/54nsPSFChWZVGv5Rjvp8"
     //  - "/courses/54nsPSFChWZVGv5Rjvp8"
@@ -66,6 +66,7 @@ class CourseService {
     final code = inputCode.trim().toUpperCase();
     if (code.isEmpty) throw Exception('Course code required');
 
+    // 1) lookup invite
     final inviteSnap = await _db.collection('courseInvites').doc(code).get();
     if (!inviteSnap.exists) throw Exception('Invalid course code');
 
@@ -73,7 +74,7 @@ class CourseService {
     final courseId = _normalizeCourseId(invite['courseId']);
     final visibility = (invite['visibility'] ?? '').toString();
 
-    // PUBLIC -> instant join
+    // 2) PUBLIC -> instant join
     if (visibility == 'public') {
       final batch = _db.batch();
 
@@ -81,6 +82,8 @@ class CourseService {
         _db.collection('courses').doc(courseId).collection('members').doc(uid),
         {
           'role': 'student',
+          'displayName': user.displayName ?? '',
+          'emailLower': (user.email ?? '').trim().toLowerCase(),
           'joinedAt': FieldValue.serverTimestamp(),
           'source': 'public',
         },
@@ -101,7 +104,7 @@ class CourseService {
       return;
     }
 
-    // PRIVATE -> create/overwrite join request
+    // 3) PRIVATE -> create/overwrite join request
     await _db
         .collection('courses')
         .doc(courseId)
@@ -143,6 +146,8 @@ class CourseService {
   Future<void> approveJoinRequest({
     required String courseId,
     required String uid,
+    required String displayName,
+    required String emailLower,
   }) async {
     final batch = _db.batch();
 
@@ -150,6 +155,8 @@ class CourseService {
       _db.collection('courses').doc(courseId).collection('members').doc(uid),
       {
         'role': 'student',
+        'displayName': displayName,
+        'emailLower': emailLower.trim().toLowerCase(),
         'joinedAt': FieldValue.serverTimestamp(),
         'source': 'request',
       },
@@ -166,7 +173,7 @@ class CourseService {
       SetOptions(merge: true),
     );
 
-    // creator deletes request after approving
+    // delete request after approve
     batch.delete(_db.collection('courses').doc(courseId).collection('joinRequests').doc(uid));
 
     await batch.commit();
@@ -181,8 +188,9 @@ class CourseService {
 
   // -----------------------------
   // Creator: add member by email (uses publicUsers)
+  // publicUsers/{uid} fields: { emailLower, displayName }
   // -----------------------------
-  Future<String> _uidByEmail(String email) async {
+  Future<Map<String, String>> _userByEmail(String email) async {
     final e = email.trim().toLowerCase();
     if (e.isEmpty) throw Exception('Email required');
 
@@ -195,14 +203,26 @@ class CourseService {
     if (q.docs.isEmpty) {
       throw Exception('No user found for $e (user must register/login once).');
     }
-    return q.docs.first.id; // doc id == uid
+
+    final doc = q.docs.first;
+    final data = doc.data();
+
+    return {
+      'uid': doc.id,
+      'displayName': (data['displayName'] ?? '') as String,
+      'emailLower': (data['emailLower'] ?? e) as String,
+    };
   }
 
   Future<void> addMemberByEmail({
     required String courseId,
     required String email,
   }) async {
-    final uid = await _uidByEmail(email);
+    final info = await _userByEmail(email);
+
+    final uid = info['uid']!;
+    final displayName = info['displayName'] ?? '';
+    final emailLower = (info['emailLower'] ?? email.trim().toLowerCase()).trim().toLowerCase();
 
     final batch = _db.batch();
 
@@ -210,6 +230,8 @@ class CourseService {
       _db.collection('courses').doc(courseId).collection('members').doc(uid),
       {
         'role': 'student',
+        'displayName': displayName,
+        'emailLower': emailLower,
         'joinedAt': FieldValue.serverTimestamp(),
         'source': 'email',
       },

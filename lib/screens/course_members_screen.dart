@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+
 import '../services/course_service.dart';
 
 class CourseMembersScreen extends StatefulWidget {
@@ -18,46 +19,107 @@ class CourseMembersScreen extends StatefulWidget {
 
 class _CourseMembersScreenState extends State<CourseMembersScreen>
     with SingleTickerProviderStateMixin {
-  late final TabController _tabController;
+  late final TabController _tab;
   final _service = CourseService();
+
+  final Set<String> _busy = {}; // prevents double taps
+
+  bool _isBusy(String uid) => _busy.contains(uid);
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tab = TabController(length: 2, vsync: this);
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _tab.dispose();
     super.dispose();
   }
 
-  void _showSnack(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg)),
+  Future<void> _runBusy(String uid, Future<void> Function() action) async {
+    setState(() => _busy.add(uid));
+    try {
+      await action();
+    } finally {
+      if (!mounted) return;
+      setState(() => _busy.remove(uid));
+    }
+  }
+
+  Future<void> _addByEmailDialog() async {
+    final ctrl = TextEditingController();
+    bool saving = false;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setState) {
+          Future<void> submit() async {
+            final email = ctrl.text.trim();
+            if (email.isEmpty) return;
+
+            setState(() => saving = true);
+            try {
+              await _service.addMemberByEmail(
+                courseId: widget.courseId,
+                email: email,
+              );
+
+              if (!dialogContext.mounted) return;
+              Navigator.pop(dialogContext);
+
+              _snack('Member added ✅');
+            } catch (e) {
+              if (!dialogContext.mounted) return;
+              setState(() => saving = false);
+              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                SnackBar(content: Text(e.toString())),
+              );
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('Add member by email'),
+            content: TextField(
+              controller: ctrl,
+              enabled: !saving,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(hintText: 'student@example.com'),
+              onSubmitted: (_) => saving ? null : submit(),
+            ),
+            actions: [
+              TextButton(
+                onPressed: saving ? null : () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: saving ? null : submit,
+                child: saving ? const Text('Adding...') : const Text('Add'),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 
-  // -------------------------
-  // Requests tab
-  // -------------------------
   Widget _requestsTab() {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _service.watchJoinRequests(widget.courseId),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
-        }
-        if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
+      builder: (context, snap) {
+        if (snap.hasError) return Center(child: Text('Error: ${snap.error}'));
+        if (!snap.hasData) return const Center(child: CircularProgressIndicator());
 
-        final docs = snapshot.data!.docs;
-        if (docs.isEmpty) {
-          return const Center(child: Text('No pending requests.'));
-        }
+        final docs = snap.data!.docs;
+        if (docs.isEmpty) return const Center(child: Text('No pending requests.'));
 
         return ListView.separated(
           itemCount: docs.length,
@@ -70,6 +132,8 @@ class _CourseMembersScreenState extends State<CourseMembersScreen>
             final name = (data['displayName'] ?? '') as String;
             final email = (data['email'] ?? '') as String;
 
+            final busy = _isBusy(uid);
+
             return ListTile(
               leading: const Icon(Icons.person_add_alt_1),
               title: Text(name.isNotEmpty ? name : email),
@@ -78,32 +142,30 @@ class _CourseMembersScreenState extends State<CourseMembersScreen>
                 spacing: 8,
                 children: [
                   TextButton(
-                    onPressed: () async {
-                      try {
-                        await _service.rejectJoinRequest(
-                          courseId: widget.courseId,
-                          uid: uid,
-                        );
-                        _showSnack('Request rejected');
-                      } catch (e) {
-                        _showSnack(e.toString());
-                      }
-                    },
+                    onPressed: busy
+                        ? null
+                        : () => _runBusy(uid, () async {
+                              await _service.rejectJoinRequest(
+                                courseId: widget.courseId,
+                                uid: uid,
+                              );
+                              _snack('Rejected');
+                            }),
                     child: const Text('Reject'),
                   ),
                   ElevatedButton(
-                    onPressed: () async {
-                      try {
-                        await _service.approveJoinRequest(
-                          courseId: widget.courseId,
-                          uid: uid,
-                        );
-                        _showSnack('Member approved');
-                      } catch (e) {
-                        _showSnack(e.toString());
-                      }
-                    },
-                    child: const Text('Approve'),
+                    onPressed: busy
+                        ? null
+                        : () => _runBusy(uid, () async {
+                              await _service.approveJoinRequest(
+                                courseId: widget.courseId,
+                                uid: uid,
+                                displayName: name,
+                                emailLower: email.toLowerCase(),
+                              );
+                              _snack('Approved ✅');
+                            }),
+                    child: busy ? const Text('...') : const Text('Approve'),
                   ),
                 ],
               ),
@@ -114,36 +176,34 @@ class _CourseMembersScreenState extends State<CourseMembersScreen>
     );
   }
 
-  // -------------------------
-  // Members tab
-  // -------------------------
   Widget _membersTab() {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _service.watchMembers(widget.courseId),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
-        }
-        if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
+      builder: (context, snap) {
+        if (snap.hasError) return Center(child: Text('Error: ${snap.error}'));
+        if (!snap.hasData) return const Center(child: CircularProgressIndicator());
 
-        final docs = snapshot.data!.docs;
-        if (docs.isEmpty) {
-          return const Center(child: Text('No members yet.'));
-        }
+        final docs = snap.data!.docs;
+        if (docs.isEmpty) return const Center(child: Text('No members yet.'));
 
         return ListView.separated(
           itemCount: docs.length,
           separatorBuilder: (_, __) => const Divider(height: 1),
           itemBuilder: (context, i) {
             final d = docs[i];
-            final role = (d.data()['role'] ?? 'student') as String;
+            final data = d.data();
+
+            final role = (data['role'] ?? 'student') as String;
+            final name = (data['displayName'] ?? '') as String;
+            final email = (data['emailLower'] ?? '') as String;
+
+            final title = name.isNotEmpty ? name : d.id;
+            final subtitle = email.isNotEmpty ? '$email • Role: $role' : 'Role: $role';
 
             return ListTile(
               leading: const Icon(Icons.group),
-              title: Text(d.id),
-              subtitle: Text('Role: $role'),
+              title: Text(title),
+              subtitle: Text(subtitle),
             );
           },
         );
@@ -151,16 +211,19 @@ class _CourseMembersScreenState extends State<CourseMembersScreen>
     );
   }
 
-  // -------------------------
-  // UI
-  // -------------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text('Members • ${widget.courseTitle}'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.person_add),
+            onPressed: _addByEmailDialog,
+          ),
+        ],
         bottom: TabBar(
-          controller: _tabController,
+          controller: _tab,
           tabs: const [
             Tab(text: 'Requests'),
             Tab(text: 'Members'),
@@ -168,7 +231,7 @@ class _CourseMembersScreenState extends State<CourseMembersScreen>
         ),
       ),
       body: TabBarView(
-        controller: _tabController,
+        controller: _tab,
         children: [
           _requestsTab(),
           _membersTab(),
