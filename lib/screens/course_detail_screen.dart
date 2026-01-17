@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'package:srls_app/screens/module_screen.dart';
 import 'package:srls_app/screens/review/review_session_screen.dart';
+import 'package:srls_app/screens/course_members_screen.dart';
 
 import '../../models/module_model.dart';
 import '../../models/review_queue_item.dart';
@@ -26,9 +28,36 @@ class CourseDetailScreen extends StatelessWidget {
     final reviewService = ReviewQueueService();
     final uid = FirebaseAuth.instance.currentUser?.uid;
 
-    return Scaffold(
-      appBar: AppBar(title: Text(courseTitle)),
-      body: Padding(
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FsPaths.courseDoc(courseId).snapshots(),
+      builder: (context, courseSnap) {
+        final courseData = courseSnap.data?.data() ?? {};
+        final creatorId = (courseData['creatorId'] ?? '') as String;
+        final isCreator = uid != null && uid == creatorId;
+
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(courseTitle),
+            actions: [
+              if (isCreator)
+                IconButton(
+                  tooltip: 'Manage members',
+                  icon: const Icon(Icons.manage_accounts),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => CourseMembersScreen(
+                          courseId: courseId,
+                          courseTitle: courseTitle,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+            ],
+          ),
+          body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
@@ -152,7 +181,9 @@ class CourseDetailScreen extends StatelessWidget {
             ),
           ],
         ),
-      ),
+          ),
+        );
+      },
     );
   }
 

@@ -37,7 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (!snap.exists) {
         await ref.set({
-          'email': user.email,
+          'email': (user.email ?? '').toLowerCase(),
           'displayName': user.displayName ?? '',
           'createdAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));

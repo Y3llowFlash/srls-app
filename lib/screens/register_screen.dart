@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -25,35 +26,57 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   Future<void> _register() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    if (mounted) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
 
     try {
       final name = _nameCtrl.text.trim();
-      final email = _emailCtrl.text.trim();
+      final emailRaw = _emailCtrl.text.trim();
       final pass = _passCtrl.text;
 
+      final emailLower = emailRaw.toLowerCase();
+
       if (name.isEmpty) throw 'Please enter your name.';
-      if (email.isEmpty) throw 'Please enter your email.';
+      if (emailRaw.isEmpty) throw 'Please enter your email.';
       if (pass.length < 6) throw 'Password must be at least 6 characters.';
 
       final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: email,
+        email: emailLower, // store lower
         password: pass,
       );
 
-      // Save name to Auth profile so we can use it later after verification.
+      final uid = cred.user!.uid;
+
+      // Save displayName in Auth profile
       await cred.user!.updateDisplayName(name);
 
-      // Send verification email (OTP link).
+      // ✅ Write private user doc (self-only)
+      await FirebaseFirestore.instance.collection('users').doc(uid).set({
+        'email': emailLower,
+        'displayName': name,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      // ✅ Write public directory doc (safe for lookup by email)
+      await FirebaseFirestore.instance.collection('publicUsers').doc(uid).set({
+        'emailLower': emailLower,
+        'displayName': name,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      // Send verification email
       await cred.user!.sendEmailVerification();
 
-      // Important: sign out so unverified user can't continue.
+      // Sign out so unverified user can’t continue
       await FirebaseAuth.instance.signOut();
 
       if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Verification email sent. Please verify, then login.'),
@@ -62,6 +85,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
       Navigator.pop(context); // back to login
     } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = switch (e.code) {
           'email-already-in-use' => 'This email is already registered.',
@@ -71,8 +95,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
         };
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => _error = e.toString());
     } finally {
+      if (!mounted) return;
       setState(() => _loading = false);
     }
   }

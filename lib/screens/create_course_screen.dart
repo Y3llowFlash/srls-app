@@ -17,8 +17,15 @@ class _CreateCourseScreenState extends State<CreateCourseScreen> {
   bool _duplicable = true;
   bool _loading = false;
 
+  @override
+  void dispose() {
+    _title.dispose();
+    _description.dispose();
+    super.dispose();
+  }
+
   Future<void> _create() async {
-    if (_title.text.isEmpty) return;
+    if (_title.text.trim().isEmpty) return;
 
     setState(() => _loading = true);
 
@@ -36,8 +43,10 @@ class _CreateCourseScreenState extends State<CreateCourseScreen> {
       if (!mounted) return;
       Navigator.pop(context);
     } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('$e')));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -55,34 +64,36 @@ class _CreateCourseScreenState extends State<CreateCourseScreen> {
               controller: _title,
               decoration: const InputDecoration(labelText: 'Course title'),
             ),
+            const SizedBox(height: 12),
             TextField(
               controller: _description,
               decoration: const InputDecoration(labelText: 'Description'),
             ),
             const SizedBox(height: 16),
-
             DropdownButton<String>(
               value: _visibility,
               items: const [
                 DropdownMenuItem(value: 'public', child: Text('Public')),
                 DropdownMenuItem(value: 'private', child: Text('Private')),
               ],
-              onChanged: (v) => setState(() => _visibility = v!),
+              onChanged: (v) => setState(() => _visibility = v ?? 'private'),
             ),
-
             SwitchListTile(
               value: _duplicable,
               onChanged: (v) => setState(() => _duplicable = v),
               title: const Text('Allow cloning'),
             ),
-
             const Spacer(),
-
             ElevatedButton(
               onPressed: _loading ? null : _create,
-              child:
-                  _loading ? const CircularProgressIndicator() : const Text('Create'),
-            )
+              child: _loading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Create'),
+            ),
           ],
         ),
       ),

@@ -96,4 +96,18 @@ class FsPaths {
   ) =>
       userCourseMemberships(uid).doc(courseId);
 
+  // -----------------------------
+  // ✅ Private join requests (NEW)
+  // -----------------------------
+  static CollectionReference<Map<String, dynamic>> courseJoinRequests(
+    String courseId,
+  ) =>
+      courseDoc(courseId).collection('joinRequests');
+
+  static DocumentReference<Map<String, dynamic>> courseJoinRequestDoc(
+    String courseId,
+    String uid,
+  ) =>
+      courseJoinRequests(courseId).doc(uid);
+
 }
