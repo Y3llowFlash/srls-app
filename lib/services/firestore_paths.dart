@@ -49,6 +49,7 @@ class FsPaths {
   ) =>
       questions(courseId, moduleId, topicId).doc(questionId);
 
+
   // -----------------------------
   // ✅ User SRS (NEW unified)
   // -----------------------------
@@ -72,4 +73,27 @@ class FsPaths {
     String questionId,
   ) =>
       userSrs(uid).doc('q_$questionId');
+
+  
+    // -----------------------------
+  // ✅ Membership (NEW)
+  // -----------------------------
+  static CollectionReference<Map<String, dynamic>> courseMembers(String courseId) =>
+      courseDoc(courseId).collection('members');
+
+  static DocumentReference<Map<String, dynamic>> courseMemberDoc(
+    String courseId,
+    String uid,
+  ) =>
+      courseMembers(courseId).doc(uid);
+
+  static CollectionReference<Map<String, dynamic>> userCourseMemberships(String uid) =>
+      userDoc(uid).collection('courseMemberships');
+
+  static DocumentReference<Map<String, dynamic>> userCourseMembershipDoc(
+    String uid,
+    String courseId,
+  ) =>
+      userCourseMemberships(uid).doc(courseId);
+
 }

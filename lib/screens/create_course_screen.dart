@@ -10,39 +10,37 @@ class CreateCourseScreen extends StatefulWidget {
 }
 
 class _CreateCourseScreenState extends State<CreateCourseScreen> {
-  final _titleController = TextEditingController();
-  final _descController = TextEditingController();
+  final _title = TextEditingController();
+  final _description = TextEditingController();
 
-  String visibility = 'public';
-  bool duplicable = true;
-  bool loading = false;
+  String _visibility = 'private';
+  bool _duplicable = true;
+  bool _loading = false;
 
-  Future<void> _createCourse() async {
-    if (_titleController.text.trim().isEmpty) return;
+  Future<void> _create() async {
+    if (_title.text.isEmpty) return;
 
-    setState(() => loading = true);
+    setState(() => _loading = true);
 
     try {
       final code = generateCourseCode();
 
       await CourseService().createCourse(
-        title: _titleController.text.trim(),
-        description: _descController.text.trim(),
-        visibility: visibility,
-        duplicable: duplicable,
+        title: _title.text.trim(),
+        description: _description.text.trim(),
+        visibility: _visibility,
+        duplicable: _duplicable,
         courseCode: code,
       );
 
       if (!mounted) return;
       Navigator.pop(context);
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed: $e')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('$e')));
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
-
-    setState(() => loading = false);
   }
 
   @override
@@ -54,39 +52,37 @@ class _CreateCourseScreenState extends State<CreateCourseScreen> {
         child: Column(
           children: [
             TextField(
-              controller: _titleController,
-              decoration: const InputDecoration(labelText: 'Course Title'),
+              controller: _title,
+              decoration: const InputDecoration(labelText: 'Course title'),
             ),
-            const SizedBox(height: 12),
-
             TextField(
-              controller: _descController,
+              controller: _description,
               decoration: const InputDecoration(labelText: 'Description'),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
 
-            DropdownButtonFormField(
-              value: visibility,
+            DropdownButton<String>(
+              value: _visibility,
               items: const [
                 DropdownMenuItem(value: 'public', child: Text('Public')),
                 DropdownMenuItem(value: 'private', child: Text('Private')),
               ],
-              onChanged: (v) => setState(() => visibility = v!),
-              decoration: const InputDecoration(labelText: 'Visibility'),
+              onChanged: (v) => setState(() => _visibility = v!),
             ),
 
             SwitchListTile(
-              title: const Text('Allow Duplicating'),
-              value: duplicable,
-              onChanged: (v) => setState(() => duplicable = v),
+              value: _duplicable,
+              onChanged: (v) => setState(() => _duplicable = v),
+              title: const Text('Allow cloning'),
             ),
 
-            const SizedBox(height: 24),
+            const Spacer(),
 
             ElevatedButton(
-              onPressed: loading ? null : _createCourse,
-              child: Text(loading ? 'Creating...' : 'Create Course'),
-            ),
+              onPressed: _loading ? null : _create,
+              child:
+                  _loading ? const CircularProgressIndicator() : const Text('Create'),
+            )
           ],
         ),
       ),

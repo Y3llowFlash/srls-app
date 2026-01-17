@@ -24,6 +24,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _login() async {
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -38,18 +39,27 @@ class _LoginScreenState extends State<LoginScreen> {
         password: pass,
       );
 
+      // If AuthGate already swapped screens, stop here safely.
+      if (!mounted) return;
+
       await cred.user?.reload();
+
+      // Screen might still get disposed during reload -> guard again
+      if (!mounted) return;
+
       final user = FirebaseAuth.instance.currentUser;
 
       // Block unverified users
       if (user != null && !user.emailVerified) {
+        if (!mounted) return;
         setState(() {
-          _error = 'Email not verified yet. Please verify. You can resend from the next screen.';
+          _error =
+              'Email not verified yet. Please verify. You can resend from the next screen.';
         });
         // Do NOT sign out. AuthGate will route to VerifyEmailScreen.
       }
-
     } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = switch (e.code) {
           'user-not-found' => 'No account found with that email.',
@@ -60,6 +70,7 @@ class _LoginScreenState extends State<LoginScreen> {
         };
       });
     } finally {
+      if (!mounted) return;
       setState(() => _loading = false);
     }
   }
@@ -67,9 +78,11 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _forgotPassword() async {
     final email = _emailCtrl.text.trim();
     if (email.isEmpty) {
+      if (!mounted) return;
       setState(() => _error = 'Enter your email first, then tap "Forgot password".');
       return;
     }
+
     try {
       await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
       if (!mounted) return;
@@ -77,6 +90,7 @@ class _LoginScreenState extends State<LoginScreen> {
         const SnackBar(content: Text('Password reset email sent.')),
       );
     } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
       setState(() => _error = e.message ?? 'Could not send reset email.');
     }
   }
@@ -101,8 +115,7 @@ class _LoginScreenState extends State<LoginScreen> {
               obscureText: true,
             ),
             const SizedBox(height: 16),
-            if (_error != null)
-              Text(_error!, style: const TextStyle(color: Colors.red)),
+            if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
             const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
