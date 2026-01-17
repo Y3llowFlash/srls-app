@@ -11,10 +11,6 @@ class CourseService {
     final s = (raw ?? '').toString().trim();
     if (s.isEmpty) throw Exception('Invalid courseId in invite');
 
-    // Accept:
-    //  - "54nsPSFChWZVGv5Rjvp8"
-    //  - "courses/54nsPSFChWZVGv5Rjvp8"
-    //  - "/courses/54nsPSFChWZVGv5Rjvp8"
     final parts = s.split('/').where((p) => p.isNotEmpty).toList();
     return parts.isEmpty ? s : parts.last;
   }
@@ -45,9 +41,8 @@ class CourseService {
       'updatedAt': FieldValue.serverTimestamp(),
     });
 
-    // IMPORTANT: store ONLY the course doc ID (not "courses/<id>")
     await _db.collection('courseInvites').doc(code).set({
-      'courseId': courseRef.id,
+      'courseId': courseRef.id, // store doc id only
       'visibility': visibility,
       'createdAt': FieldValue.serverTimestamp(),
     });
@@ -66,7 +61,6 @@ class CourseService {
     final code = inputCode.trim().toUpperCase();
     if (code.isEmpty) throw Exception('Course code required');
 
-    // 1) lookup invite
     final inviteSnap = await _db.collection('courseInvites').doc(code).get();
     if (!inviteSnap.exists) throw Exception('Invalid course code');
 
@@ -74,7 +68,7 @@ class CourseService {
     final courseId = _normalizeCourseId(invite['courseId']);
     final visibility = (invite['visibility'] ?? '').toString();
 
-    // 2) PUBLIC -> instant join
+    // PUBLIC -> instant join
     if (visibility == 'public') {
       final batch = _db.batch();
 
@@ -104,7 +98,7 @@ class CourseService {
       return;
     }
 
-    // 3) PRIVATE -> create/overwrite join request
+    // PRIVATE -> join request
     await _db
         .collection('courses')
         .doc(courseId)
@@ -120,7 +114,7 @@ class CourseService {
   }
 
   // -----------------------------
-  // Creator: watch requests/members
+  // Streams
   // -----------------------------
   Stream<QuerySnapshot<Map<String, dynamic>>> watchJoinRequests(String courseId) {
     return _db
@@ -141,7 +135,7 @@ class CourseService {
   }
 
   // -----------------------------
-  // Creator: approve / reject request
+  // Approve / Reject
   // -----------------------------
   Future<void> approveJoinRequest({
     required String courseId,
@@ -173,7 +167,6 @@ class CourseService {
       SetOptions(merge: true),
     );
 
-    // delete request after approve
     batch.delete(_db.collection('courses').doc(courseId).collection('joinRequests').doc(uid));
 
     await batch.commit();
@@ -187,8 +180,7 @@ class CourseService {
   }
 
   // -----------------------------
-  // Creator: add member by email (uses publicUsers)
-  // publicUsers/{uid} fields: { emailLower, displayName }
+  // Add member by email (publicUsers)
   // -----------------------------
   Future<Map<String, String>> _userByEmail(String email) async {
     final e = email.trim().toLowerCase();
@@ -248,8 +240,27 @@ class CourseService {
       SetOptions(merge: true),
     );
 
-    // clear request if exists
     batch.delete(_db.collection('courses').doc(courseId).collection('joinRequests').doc(uid));
+
+    await batch.commit();
+  }
+
+  // -----------------------------
+  // ✅ Remove member (creator)
+  // -----------------------------
+  Future<void> removeMember({
+    required String courseId,
+    required String memberUid,
+  }) async {
+    final batch = _db.batch();
+
+    batch.delete(
+      _db.collection('courses').doc(courseId).collection('members').doc(memberUid),
+    );
+
+    batch.delete(
+      _db.collection('users').doc(memberUid).collection('courseMemberships').doc(courseId),
+    );
 
     await batch.commit();
   }

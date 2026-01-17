@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../services/course_service.dart';
@@ -22,7 +23,7 @@ class _CourseMembersScreenState extends State<CourseMembersScreen>
   late final TabController _tab;
   final _service = CourseService();
 
-  final Set<String> _busy = {}; // prevents double taps
+  final Set<String> _busy = {}; // prevent double taps
 
   bool _isBusy(String uid) => _busy.contains(uid);
 
@@ -177,6 +178,8 @@ class _CourseMembersScreenState extends State<CourseMembersScreen>
   }
 
   Widget _membersTab() {
+    final myUid = FirebaseAuth.instance.currentUser?.uid;
+
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _service.watchMembers(widget.courseId),
       builder: (context, snap) {
@@ -191,19 +194,63 @@ class _CourseMembersScreenState extends State<CourseMembersScreen>
           separatorBuilder: (_, __) => const Divider(height: 1),
           itemBuilder: (context, i) {
             final d = docs[i];
+            final uid = d.id;
             final data = d.data();
 
             final role = (data['role'] ?? 'student') as String;
             final name = (data['displayName'] ?? '') as String;
             final email = (data['emailLower'] ?? '') as String;
 
-            final title = name.isNotEmpty ? name : d.id;
+            final title = name.isNotEmpty ? name : uid;
             final subtitle = email.isNotEmpty ? '$email • Role: $role' : 'Role: $role';
+
+            // Prevent removing yourself
+            final canRemove = myUid != null && uid != myUid;
+            final busy = _isBusy(uid);
 
             return ListTile(
               leading: const Icon(Icons.group),
               title: Text(title),
               subtitle: Text(subtitle),
+              trailing: IconButton(
+                tooltip: 'Remove member',
+                icon: const Icon(Icons.person_remove),
+                color: Colors.red,
+                onPressed: (!canRemove || busy)
+                    ? null
+                    : () async {
+                        final ok = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text('Remove member?'),
+                            content: Text(
+                              'Remove ${name.isNotEmpty ? name : uid} from this course?\n\nThey will lose access immediately.',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, false),
+                                child: const Text('Cancel'),
+                              ),
+                              ElevatedButton(
+                                onPressed: () => Navigator.pop(ctx, true),
+                                child: const Text('Remove'),
+                              ),
+                            ],
+                          ),
+                        );
+
+                        if (ok != true) return;
+
+                        await _runBusy(uid, () async {
+                          await _service.removeMember(
+                            courseId: widget.courseId,
+                            memberUid: uid,
+                          );
+                        });
+
+                        _snack('Member removed');
+                      },
+              ),
             );
           },
         );
