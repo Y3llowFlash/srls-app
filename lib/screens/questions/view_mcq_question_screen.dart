@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+// firebase_auth / cloud_firestore not needed here (SrsService handles auth/db)
 
 import '../../models/mcq_question.dart';
 import '../../services/question_service.dart';
 import '../../services/srs_service.dart';
-import '../../utils/srs_math.dart';
+
 import '../../widgets/mcq_storage_image.dart';
 import 'create_mcq_question_screen.dart';
 
@@ -165,48 +164,25 @@ class _ViewMcqQuestionScreenState extends State<ViewMcqQuestionScreen> {
     Navigator.pop(context, true);
   }
 
-  Future<void> _testEasyReview() async {
+  /// Adds this question into the user's SRS (no need to star/unstar first).
+  /// Uses current star state to influence future interval math.
+  Future<void> _addToSrs() async {
     final q = _question;
     if (q == null) return;
 
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-
-    final srsDocId = 'q_${q.id}';
-
-    final snap = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .collection('srs')
-        .doc(srsDocId)
-        .get();
-
-    if (!snap.exists) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No SRS doc found. Star the question first.')),
-      );
-      return;
-    }
-
-    final d = snap.data() ?? {};
-    final reps = (d['reps'] ?? 0) as int;
-    final intervalDays = (d['intervalDays'] ?? 0) as int;
-    final easeFactor = ((d['easeFactor'] ?? 2.5) as num).toDouble();
-    final isStarred = (d['isStarred'] ?? true) as bool;
-
-    await srs.applyReviewUnified(
-      srsDocId: srsDocId,
-      isStarred: isStarred,
-      reps: reps,
-      intervalDays: intervalDays,
-      easeFactor: easeFactor,
-      rating: ReviewRating.easy,
+    final created = await srs.addQuestionToSrs(
+      courseId: widget.courseId,
+      moduleId: widget.moduleId,
+      topicId: widget.topicId,
+      questionId: q.id,
+      isStarred: q.isStarred,
     );
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Applied EASY review (check dueAt)')),
+      SnackBar(
+        content: Text(created ? 'Added to your SRS' : 'Already in your SRS (set due now)'),
+      ),
     );
   }
 
@@ -236,8 +212,8 @@ class _ViewMcqQuestionScreenState extends State<ViewMcqQuestionScreen> {
             ),
             IconButton(
               icon: const Icon(Icons.bolt),
-              tooltip: 'Test: review EASY',
-              onPressed: _testEasyReview,
+              tooltip: 'Add to SRS',
+              onPressed: _addToSrs,
             ),
           ],
         ],

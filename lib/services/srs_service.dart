@@ -173,6 +173,52 @@ class SrsService {
     });
   }
 
+  /// Explicit user action: add this question into SRS.
+  ///
+  /// Returns `true` if the SRS doc was newly created, `false` if it already existed.
+  ///
+  /// We also force `dueAt` to NOW so it appears in the review queue immediately.
+  Future<bool> addQuestionToSrs({
+    required String courseId,
+    required String moduleId,
+    required String topicId,
+    required String questionId,
+    required bool isStarred,
+  }) async {
+    final ref = _srs().doc(_questionDocId(questionId));
+    final snap = await ref.get();
+
+    if (!snap.exists) {
+      await ref.set({
+        'type': 'question',
+        'refId': questionId,
+        'courseId': courseId,
+        'moduleId': moduleId,
+        'topicId': topicId,
+        'kind': 'question',
+        'questionId': questionId,
+
+        'isStarred': isStarred,
+        'reps': 0,
+        'intervalDays': 0,
+        'easeFactor': 2.5,
+        'dueAt': Timestamp.now(),
+        'updatedAt': FieldValue.serverTimestamp(),
+        'addedBy': 'manual',
+      });
+      return true;
+    }
+
+    // Already exists: keep learning stats, just update star + make it due now.
+    await ref.set({
+      'isStarred': isStarred,
+      'dueAt': Timestamp.now(),
+      'updatedAt': FieldValue.serverTimestamp(),
+      'addedBy': 'manual',
+    }, SetOptions(merge: true));
+    return false;
+  }
+
   // -----------------------------
   // Star toggles (unified)
   // -----------------------------
