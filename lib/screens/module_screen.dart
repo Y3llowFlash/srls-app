@@ -15,7 +15,12 @@ import '../../services/firestore_paths.dart';
 import '../../services/topic_service.dart';
 import '../../services/review_queue_service.dart';
 
-class ModuleScreen extends StatelessWidget {
+enum _TopicSortMode {
+  created,
+  az,
+}
+
+class ModuleScreen extends StatefulWidget {
   final String courseId;
   final String moduleId;
   final String moduleTitle;
@@ -28,13 +33,21 @@ class ModuleScreen extends StatelessWidget {
   });
 
   @override
+  State<ModuleScreen> createState() => _ModuleScreenState();
+}
+
+class _ModuleScreenState extends State<ModuleScreen> {
+  final _topicService = TopicService();
+  final _reviewService = ReviewQueueService();
+
+  _TopicSortMode _sortMode = _TopicSortMode.created;
+
+  @override
   Widget build(BuildContext context) {
-    final topicService = TopicService();
-    final reviewService = ReviewQueueService();
     final uid = FirebaseAuth.instance.currentUser?.uid;
 
     return Scaffold(
-      appBar: AppBar(title: Text(moduleTitle)),
+      appBar: AppBar(title: Text(widget.moduleTitle)),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -51,10 +64,10 @@ class ModuleScreen extends StatelessWidget {
 
                 if (uid != null)
                   StreamBuilder<List<ReviewQueueItem>>(
-                    stream: reviewService.watchDueReviews(
+                    stream: _reviewService.watchDueReviews(
                       uid: uid,
-                      courseId: courseId,
-                      moduleId: moduleId,
+                      courseId: widget.courseId,
+                      moduleId: widget.moduleId,
                       limit: 999,
                     ),
                     builder: (context, snap) {
@@ -87,8 +100,8 @@ class ModuleScreen extends StatelessWidget {
                             context,
                             MaterialPageRoute(
                               builder: (_) => ReviewSessionScreen(
-                                courseId: courseId,
-                                moduleId: moduleId,
+                                courseId: widget.courseId,
+                                moduleId: widget.moduleId,
                               ),
                             ),
                           );
@@ -102,37 +115,77 @@ class ModuleScreen extends StatelessWidget {
             const SizedBox(height: 16),
 
             // ✅ Topics header row
-            Row(
-              children: [
-                const Text(
-                  'Topics',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.add),
-                  onPressed: () => _showAddTopicDialog(context),
-                ),
-              ],
+            StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+              stream: FsPaths.courseDoc(widget.courseId).snapshots(),
+              builder: (context, courseSnap) {
+                final creatorId = courseSnap.data?.data()?['creatorId']?.toString();
+                final isCreator = uid != null && creatorId == uid;
+
+                return Row(
+                  children: [
+                    const Text(
+                      'Topics',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const Spacer(),
+                    // ✅ Sort button (no schema change)
+                    IconButton(
+                      tooltip: _sortMode == _TopicSortMode.az
+                          ? 'Sorted A–Z'
+                          : 'Sorted by created',
+                      icon: Icon(
+                        _sortMode == _TopicSortMode.az
+                            ? Icons.sort_by_alpha
+                            : Icons.schedule,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _sortMode = _sortMode == _TopicSortMode.created
+                              ? _TopicSortMode.az
+                              : _TopicSortMode.created;
+                        });
+                      },
+                    ),
+                    if (isCreator)
+                      IconButton(
+                        icon: const Icon(Icons.add),
+                        onPressed: () => _showAddTopicDialog(context),
+                      ),
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 8),
 
             // ✅ Topic list
             Expanded(
               child: StreamBuilder<List<TopicModel>>(
-                stream: topicService.watchTopics(courseId, moduleId),
+                stream: _topicService.watchTopics(widget.courseId, widget.moduleId),
                 builder: (context, snapshot) {
                   if (snapshot.hasError) return Text('Error: ${snapshot.error}');
                   if (!snapshot.hasData) {
                     return const Center(child: CircularProgressIndicator());
                   }
 
-                  final topics = snapshot.data!;
+                  final topics = [...snapshot.data!];
+
+                  // Apply local sort mode (no schema change)
+                  if (_sortMode == _TopicSortMode.az) {
+                    topics.sort(
+                      (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+                    );
+                  }
+
                   if (topics.isEmpty) {
                     return const Center(
                       child: Text('No topics yet. Tap + to add one.'),
                     );
                   }
+
+                  final uid = FirebaseAuth.instance.currentUser?.uid;
 
                   return ListView.separated(
                     itemCount: topics.length,
@@ -150,24 +203,68 @@ class ModuleScreen extends StatelessWidget {
                               ? '🔗 YouTube video'
                               : '🎥 Uploaded video';
 
-                      return ListTile(
-                        title: Text(t.title),
-                        subtitle: Text(subtitle),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => TopicScreen(
-                                courseId: courseId,
-                                moduleId: moduleId,
-                                topicId: t.id,
-                                topicTitle: t.title,
-                                notes: t.notes,
-                                videoUrl: t.videoUrl,
-                                isStarredNote: t.isStarredNote,
-                              ),
+                      return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                        stream: FsPaths.courseDoc(widget.courseId).snapshots(),
+                        builder: (context, courseSnap) {
+                          final creatorId =
+                              courseSnap.data?.data()?['creatorId']?.toString();
+                          final isCreator = uid != null && creatorId == uid;
+
+                          return ListTile(
+                            title: Text(t.title),
+                            subtitle: Text(subtitle),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (isCreator)
+                                  PopupMenuButton<String>(
+                                    icon: const Icon(Icons.more_vert),
+                                    onSelected: (v) async {
+                                      if (v == 'edit') {
+                                        await _showEditTopicTitleDialog(
+                                          context,
+                                          topicId: t.id,
+                                          currentTitle: t.title,
+                                        );
+                                      }
+                                      if (v == 'delete') {
+                                        await _confirmDeleteTopic(
+                                          context,
+                                          topicId: t.id,
+                                          title: t.title,
+                                        );
+                                      }
+                                    },
+                                    itemBuilder: (_) => const [
+                                      PopupMenuItem(
+                                        value: 'edit',
+                                        child: Text('Edit'),
+                                      ),
+                                      PopupMenuItem(
+                                        value: 'delete',
+                                        child: Text('Delete'),
+                                      ),
+                                    ],
+                                  ),
+                                const Icon(Icons.chevron_right),
+                              ],
                             ),
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => TopicScreen(
+                                    courseId: widget.courseId,
+                                    moduleId: widget.moduleId,
+                                    topicId: t.id,
+                                    topicTitle: t.title,
+                                    notes: t.notes,
+                                    videoUrl: t.videoUrl,
+                                    isStarredNote: t.isStarredNote,
+                                  ),
+                                ),
+                              );
+                            },
                           );
                         },
                       );
@@ -238,7 +335,7 @@ class ModuleScreen extends StatelessWidget {
 
             setState(() => saving = true);
 
-            final doc = FsPaths.topics(courseId, moduleId).doc();
+            final doc = FsPaths.topics(widget.courseId, widget.moduleId).doc();
 
             String videoType = 'none';
             String videoUrl = '';
@@ -250,8 +347,8 @@ class ModuleScreen extends StatelessWidget {
               } else if (selected == 'upload') {
                 videoType = 'storage';
                 videoUrl = await uploadToStorage(
-                  courseId: courseId,
-                  moduleId: moduleId,
+                  courseId: widget.courseId,
+                  moduleId: widget.moduleId,
                   topicId: doc.id,
                   file: pickedFile!,
                 );
@@ -437,5 +534,115 @@ class ModuleScreen extends StatelessWidget {
         },
       ),
     );
+  }
+
+  Future<void> _showEditTopicTitleDialog(
+    BuildContext context, {
+    required String topicId,
+    required String currentTitle,
+  }) async {
+    final ctrl = TextEditingController(text: currentTitle);
+    bool saving = false;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => StatefulBuilder(
+        builder: (dialogContext, setState) {
+          Future<void> save() async {
+            final v = ctrl.text.trim();
+            if (v.isEmpty) {
+              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                const SnackBar(content: Text('Title is required.')),
+              );
+              return;
+            }
+
+            setState(() => saving = true);
+            try {
+              await _topicService.renameTopic(
+                courseId: widget.courseId,
+                moduleId: widget.moduleId,
+                topicId: topicId,
+                title: v,
+              );
+              if (mounted) Navigator.pop(dialogContext);
+            } catch (e) {
+              setState(() => saving = false);
+              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                SnackBar(content: Text('Failed to update: $e')),
+              );
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('Edit topic'),
+            content: TextField(
+              controller: ctrl,
+              decoration: const InputDecoration(labelText: 'Topic title'),
+            ),
+            actions: [
+              TextButton(
+                onPressed: saving ? null : () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: saving ? null : save,
+                child: saving
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Save'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteTopic(
+    BuildContext context, {
+    required String topicId,
+    required String title,
+  }) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete topic?'),
+        content: Text('Delete "$title"? This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    try {
+      await _topicService.deleteTopicIfEmpty(
+        courseId: widget.courseId,
+        moduleId: widget.moduleId,
+        topicId: topicId,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Topic deleted.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e')),
+      );
+    }
   }
 }

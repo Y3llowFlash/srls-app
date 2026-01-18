@@ -98,4 +98,40 @@ class TopicService {
   }) {
     return FsPaths.topics(courseId, moduleId).doc(topicId);
   }
+
+  // -----------------------------
+  // ✅ Editing helpers (Phase 1.1)
+  // -----------------------------
+
+  Future<void> renameTopic({
+    required String courseId,
+    required String moduleId,
+    required String topicId,
+    required String title,
+  }) async {
+    await updateTopic(
+      courseId: courseId,
+      moduleId: moduleId,
+      topicId: topicId,
+      title: title,
+    );
+  }
+
+  /// Delete topic ONLY if it has no questions.
+  /// This prevents accidental data loss.
+  Future<void> deleteTopicIfEmpty({
+    required String courseId,
+    required String moduleId,
+    required String topicId,
+  }) async {
+    final q = await FsPaths.questions(courseId, moduleId, topicId)
+        .limit(1)
+        .get();
+
+    if (q.docs.isNotEmpty) {
+      throw Exception('This topic has questions. Delete questions first.');
+    }
+
+    await FsPaths.topicDoc(courseId, moduleId, topicId).delete();
+  }
 }

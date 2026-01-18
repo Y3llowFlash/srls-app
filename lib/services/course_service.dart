@@ -5,6 +5,31 @@ class CourseService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   // -----------------------------
+  // Update Course (creator-only via rules)
+  // -----------------------------
+  Future<void> updateCourse({
+    required String courseId,
+    String? title,
+    String? description,
+    String? visibility, // "public" | "private"
+    bool? duplicable,
+  }) async {
+    final data = <String, dynamic>{
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+
+    if (title != null) data['title'] = title;
+    if (description != null) data['description'] = description;
+    if (visibility != null) data['visibility'] = visibility;
+    if (duplicable != null) data['duplicable'] = duplicable;
+
+    // Avoid empty updates that only touch timestamps if caller passed nothing.
+    if (data.length == 1) return;
+
+    await _db.collection('courses').doc(courseId).update(data);
+  }
+
+  // -----------------------------
   // Helpers
   // -----------------------------
   String _normalizeCourseId(dynamic raw) {
